@@ -42,7 +42,7 @@ export async function getAllUsers(filters = {}) {
     
     let query = `
       SELECT id, email, name, role, status, createdAt, updatedAt
-      FROM user
+      FROM User
       WHERE 1=1
     `
     const params = []
@@ -76,7 +76,7 @@ export async function getUserById(userId) {
     
     const [users] = await connection.execute(
       `SELECT id, email, name, role, status, createdAt, updatedAt
-       FROM user
+       FROM User
        WHERE id = ?`,
       [userId]
     )
@@ -96,7 +96,7 @@ export async function createUser(userData) {
     const hashedPassword = await bcrypt.hash(userData.password, 10)
     
     const [result] = await connection.execute(
-      `INSERT INTO user (email, password, name, role, status, createdAt, updatedAt)
+      `INSERT INTO User (email, password, name, role, status, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         userData.email,
@@ -155,7 +155,7 @@ export async function updateUser(userId, userData) {
     params.push(userId)
     
     const [result] = await connection.execute(
-      `UPDATE user SET ${updates.join(', ')} WHERE id = ?`,
+      `UPDATE User SET ${updates.join(', ')} WHERE id = ?`,
       params
     )
     
@@ -177,7 +177,7 @@ export async function deleteUser(userId) {
     const connection = getPool()
     
     const [result] = await connection.execute(
-      'DELETE FROM user WHERE id = ?',
+      'DELETE FROM User WHERE id = ?',
       [userId]
     )
     
@@ -200,7 +200,7 @@ export async function getUserStats() {
         SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END) as admins,
         SUM(CASE WHEN role = 'manager' THEN 1 ELSE 0 END) as managers,
         SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END) as users
-      FROM user
+      FROM User
     `)
     
     return stats[0]

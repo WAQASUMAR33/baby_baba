@@ -39,7 +39,7 @@ export async function findUserByEmail(email) {
   try {
     const connection = getPool()
     const [users] = await connection.execute(
-      'SELECT * FROM user WHERE email = ?',
+      'SELECT * FROM User WHERE email = ?',
       [email]
     )
     return users.length > 0 ? users[0] : null
@@ -127,7 +127,7 @@ export async function getSales(filters = {}) {
     let query = `
       SELECT s.*, u.name as userName, u.email as userEmail
       FROM Sale s
-      LEFT JOIN user u ON s.userId = u.id
+      LEFT JOIN User u ON s.userId = u.id
     `
     const params = []
     const conditions = []

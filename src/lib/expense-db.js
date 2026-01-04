@@ -96,7 +96,7 @@ export async function createExpense(expenseData, userId) {
       `SELECT e.*, et.exp_title, u.name as userName, u.email as userEmail
        FROM Expense e
        LEFT JOIN ExpenseTitle et ON e.exp_title_id = et.id
-       LEFT JOIN user u ON e.added_by = u.id
+       LEFT JOIN User u ON e.added_by = u.id
        WHERE e.id = ?`,
       [expenseId]
     )
@@ -116,7 +116,7 @@ export async function getExpenses(filters = {}) {
       SELECT e.*, et.exp_title, u.name as userName, u.email as userEmail
       FROM Expense e
       LEFT JOIN ExpenseTitle et ON e.exp_title_id = et.id
-      LEFT JOIN user u ON e.added_by = u.id
+      LEFT JOIN User u ON e.added_by = u.id
     `
     const params = []
     const conditions = []

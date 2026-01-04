@@ -28,7 +28,7 @@ model user {
 
   @@index([role])
   @@index([status])
-  @@map("user")
+  @@map("User")
 }
 
 model Sale {
