@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-feature-settings: "rlig" 1, "calt" 1;
+    color: #000000;
+  }
+}
+
+@layer components {
+  /* Override any default gray text to be darker */
+  .text-gray-900 {
+    color: #111827;
+  }
+
+  .text-gray-800 {
+    color: #1f2937;
+  }
+
+  .text-gray-700 {
+    color: #374151;
+  }
+
+  .text-gray-600 {
+    color: #4b5563;
+  }
+
+  .text-gray-500 {
+    color: #6b7280;
+  }
+
+  /* Ensure headings are visible */
+  h1, h2, h3, h4, h5, h6 {
+    color: #111827;
+  }
+
+  /* Ensure labels are visible */
+  label {
+    color: #374151;
+  }
+
+  /* Ensure input text is visible */
+  input, textarea, select {
+    color: #111827;
+  }
+
+  /* Ensure button text is visible */
+  button {
+    font-weight: 500;
+  }
+
+  /* Sidebar text */
+  nav a {
+    font-weight: 500;
+  }
+}

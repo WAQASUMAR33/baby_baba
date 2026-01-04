@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model user {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique(map: "User_email_key")
+  password  String    @db.VarChar(255)
+  name      String?
+  role      String    @default("user") @db.VarChar(50) // admin, manager, user
+  status    String    @default("active") @db.VarChar(50) // active, inactive
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  sales     Sale[]    // Relation to sales
+  expenses  Expense[] // Relation to expenses
+  
+  @@index([role])
+  @@index([status])
+}
+
+model Sale {
+  id              Int        @id @default(autoincrement())
+  subtotal        Decimal    @db.Decimal(10, 2)
+  discount        Decimal    @db.Decimal(10, 2)
+  total           Decimal    @db.Decimal(10, 2)
+  paymentMethod   String     @db.VarChar(50) // cash, card, online
+  amountReceived  Decimal    @db.Decimal(10, 2)
+  change          Decimal    @db.Decimal(10, 2)
+  customerName    String?    @db.VarChar(191)
+  customerPhone   String?    @db.VarChar(50)
+  status          String     @default("completed") @db.VarChar(50) // completed, refunded, cancelled
+  userId          Int
+  user            user       @relation(fields: [userId], references: [id])
+  items           SaleItem[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  
+  @@index([userId])
+  @@index([createdAt])
+  @@index([status])
+}
+
+model SaleItem {
+  id          Int      @id @default(autoincrement())
+  saleId      Int
+  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId   String   @db.VarChar(191) // Shopify product ID (can be large)
+  variantId   String   @db.VarChar(191) // Shopify variant ID (can be large)
+  title       String   @db.VarChar(500)
+  price       Decimal  @db.Decimal(10, 2)
+  quantity    Int
+  sku         String?  @db.VarChar(191)
+  image       String?  @db.Text
+  createdAt   DateTime @default(now())
+  
+  @@index([saleId])
+  @@index([productId])
+}
+
+model ExpenseTitle {
+  id          Int       @id @default(autoincrement())
+  exp_title   String    @unique @db.VarChar(191)
+  createdAt   DateTime  @default(now())
+  expenses    Expense[]
+  
+  @@index([exp_title])
+}
+
+model Expense {
+  id              Int           @id @default(autoincrement())
+  exp_title_id    Int
+  expenseTitle    ExpenseTitle  @relation(fields: [exp_title_id], references: [id])
+  exp_description String?       @db.Text
+  exp_amount      Decimal       @db.Decimal(10, 2)
+  exp_date        DateTime      @default(now())
+  added_by        Int
+  user            user          @relation(fields: [added_by], references: [id])
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  @@index([added_by])
+  @@index([exp_date])
+  @@index([exp_title_id])
+}
