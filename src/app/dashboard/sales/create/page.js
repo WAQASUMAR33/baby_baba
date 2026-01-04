@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
+import { useSession } from "next-auth/react"
 
 export default function POSPage() {
   const barcodeInputRef = useRef(null)
+  const { data: session } = useSession()
   
   const [products, setProducts] = useState([])
   const [loadingProducts, setLoadingProducts] = useState(true)
@@ -163,6 +165,312 @@ export default function POSPage() {
   const total = subtotal - discountAmount
   const change = amountReceived ? parseFloat(amountReceived) - total : 0
 
+  // Format currency helper
+  const formatCurrency = (amount) => {
+    return `Rs ${parseFloat(amount).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+
+  // Print receipt function
+  const printReceipt = (saleData) => {
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank', 'width=80mm,height=auto')
+    
+    if (!printWindow) {
+      console.warn('Could not open print window. Popups may be blocked.')
+      return
+    }
+
+    const receiptHTML = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Receipt #${saleData.id}</title>
+          <style>
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            
+            body {
+              width: 80mm;
+              max-width: 80mm;
+              margin: 0;
+              padding: 5mm;
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              font-size: 10pt;
+              line-height: 1.2;
+              color: #000000;
+              background: #fff;
+            }
+            
+            * {
+              color: #000000 !important;
+            }
+            
+            p, span, div, td, th, h1, h2, h3, h4, h5, h6, strong, em {
+              color: #000000 !important;
+            }
+            
+            .print-logo {
+              text-align: center;
+              margin-bottom: 8px;
+              border-bottom: 1px dashed #000;
+              padding-bottom: 8px;
+            }
+            
+            .print-logo h1 {
+              font-size: 18pt;
+              font-weight: bold;
+              margin: 0;
+              letter-spacing: 1px;
+              color: #000000;
+            }
+            
+            .print-logo p {
+              margin: 2px 0;
+              font-size: 9pt;
+              color: #000000;
+            }
+            
+            .print-divider {
+              border-top: 1px dashed #000;
+              margin: 6px 0;
+            }
+            
+            .print-section {
+              margin-bottom: 8px;
+              font-size: 9pt;
+              color: #000000;
+            }
+            
+            .print-section div {
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 3px;
+              line-height: 1.3;
+              color: #000000;
+            }
+            
+            .print-table {
+              width: 100%;
+              font-size: 9pt;
+              margin: 8px 0;
+              border-collapse: collapse;
+            }
+            
+            .print-table th {
+              text-align: left;
+              padding: 4px 0;
+              border-bottom: 1px solid #000;
+              font-weight: bold;
+              font-size: 8pt;
+              color: #000000;
+            }
+            
+            .print-table td {
+              padding: 3px 0;
+              border-bottom: 1px dotted #999;
+              font-size: 9pt;
+              color: #000000;
+            }
+            
+            .print-table .text-center {
+              text-align: center;
+            }
+            
+            .print-table .text-right {
+              text-align: right;
+            }
+            
+            .print-total {
+              font-size: 11pt;
+              font-weight: bold;
+              margin-top: 8px;
+              padding-top: 8px;
+              border-top: 2px solid #000;
+              display: flex;
+              justify-content: space-between;
+              color: #000000;
+            }
+            
+            .print-footer {
+              text-align: center;
+              margin-top: 12px;
+              font-size: 7pt;
+              border-top: 1px dashed #000;
+              padding-top: 8px;
+              color: #000000;
+            }
+            
+            @media print {
+              @page {
+                size: 80mm auto;
+                margin: 0;
+              }
+              
+              body {
+                width: 80mm;
+                margin: 0;
+                padding: 5mm;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                color: #000000;
+              }
+              
+              * {
+                color: #000000 !important;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <!-- Header -->
+          <div class="print-logo">
+            <h1>Baby Bazar</h1>
+            <p style="margin: 4px 0 2px 0; font-size: 9pt; color: #000000;">Post Office Road M.B.Din</p>
+            <p style="margin: 2px 0; font-size: 9pt; color: #000000;">Phone # : 0347-943-2880</p>
+          </div>
+
+          <!-- Receipt Info -->
+          <div class="print-section">
+            <div>
+              <strong style="color: #000000;">Receipt #:</strong>
+              <span style="color: #000000;">${saleData.id || 'N/A'}</span>
+            </div>
+            <div>
+              <strong style="color: #000000;">Date:</strong>
+              <span style="color: #000000;">${new Date().toLocaleString('en-GB', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              })}</span>
+            </div>
+            <div>
+              <strong style="color: #000000;">Customer:</strong>
+              <span style="color: #000000;">${saleData.customerName || 'Walk-in'}</span>
+            </div>
+            ${saleData.customerPhone ? `
+            <div>
+              <strong style="color: #000000;">Phone:</strong>
+              <span style="color: #000000;">${saleData.customerPhone}</span>
+            </div>
+            ` : ''}
+            <div>
+              <strong style="color: #000000;">Cashier:</strong>
+              <span style="color: #000000;">${session?.user?.name || session?.user?.email || 'N/A'}</span>
+            </div>
+          </div>
+
+          <div class="print-divider"></div>
+
+          <!-- Items Table -->
+          <table class="print-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th class="text-center">Qty</th>
+                <th class="text-right">Price</th>
+                <th class="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${saleData.items && saleData.items.length > 0 ? saleData.items.map(item => `
+                <tr>
+                  <td>
+                    <div style="color: #000000;">${item.title || 'N/A'}</div>
+                    ${item.sku ? `<div style="font-size: 8pt; color: #000000;">SKU: ${item.sku}</div>` : ''}
+                  </td>
+                  <td class="text-center" style="color: #000000;">${item.quantity || 0}</td>
+                  <td class="text-right" style="color: #000000;">${formatCurrency(item.price || 0)}</td>
+                  <td class="text-right" style="font-weight: bold; color: #000000;">
+                    ${formatCurrency(parseFloat(item.price || 0) * parseInt(item.quantity || 0))}
+                  </td>
+                </tr>
+              `).join('') : `
+                <tr>
+                  <td colspan="4" style="text-align: center; padding: 8px 0; color: #000000;">
+                    No items
+                  </td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+
+          <div class="print-divider"></div>
+
+          <!-- Totals -->
+          <div class="print-section">
+            <div>
+              <span style="color: #000000;">Subtotal:</span>
+              <span style="color: #000000;">${formatCurrency(saleData.subtotal || 0)}</span>
+            </div>
+            ${parseFloat(saleData.discount || 0) > 0 ? `
+            <div>
+              <span style="color: #000000;">Discount:</span>
+              <span style="color: #000000;">-${formatCurrency(saleData.discount)}</span>
+            </div>
+            ` : ''}
+            <div class="print-total">
+              <span style="color: #000000;">TOTAL:</span>
+              <span style="color: #000000;">${formatCurrency(saleData.total || 0)}</span>
+            </div>
+          </div>
+
+          <div class="print-divider"></div>
+
+          <!-- Payment Info -->
+          <div class="print-section">
+            <div>
+              <span style="color: #000000;">Payment Method:</span>
+              <span style="text-transform: capitalize; color: #000000;">${saleData.paymentMethod || 'N/A'}</span>
+            </div>
+            <div>
+              <span style="color: #000000;">Amount Received:</span>
+              <span style="color: #000000;">${formatCurrency(saleData.amountReceived || 0)}</span>
+            </div>
+            ${parseFloat(saleData.change || 0) > 0 ? `
+            <div style="font-weight: bold;">
+              <span style="color: #000000;">Change:</span>
+              <span style="color: #000000;">${formatCurrency(saleData.change)}</span>
+            </div>
+            ` : ''}
+          </div>
+
+          <div class="print-divider"></div>
+
+          <!-- Footer -->
+          <div class="print-footer">
+            <div style="text-align: center; font-size: 7pt; line-height: 1.3; margin-bottom: 6px;">
+              <p style="margin: 2px 0; color: #000000;">*Products will not be returned or exchanged without the original bill.</p>
+              <p style="margin: 2px 0; color: #000000;">Garments, Shoes, Hosiery Items, Feeding Items, Stuff Toys Can Be Returned Or Exchanged Within 4 Days.</p>
+              <p style="margin: 2px 0; color: #000000;">*All Electric Items, Small Toys, Prams, Wooden Cots, Wooden Cupboards, Wooden Beds, Cycles Will Not Be Returned Nor Exchanged.</p>
+            </div>
+            <p style="margin: 8px 0 0 0; font-weight: bold; color: #000000;">We Look forward to selling you again</p>
+          </div>
+
+          <script>
+            // Auto-print when window loads
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+                // Close window after printing (or after 1 second if print dialog is cancelled)
+                setTimeout(function() {
+                  window.close();
+                }, 1000);
+              }, 250);
+            };
+          </script>
+        </body>
+      </html>
+    `
+
+    // Write HTML to the new window
+    printWindow.document.write(receiptHTML)
+    printWindow.document.close()
+  }
+
   // Complete sale
   const completeSale = async () => {
     if (cartItems.length === 0) {
@@ -206,8 +514,9 @@ export default function POSPage() {
       }
 
       // Save to database via API
-      // NOTE: This only records the sale in local database
-      // It does NOT create orders or update inventory in Shopify
+      // This will:
+      // 1. Record the sale in local database
+      // 2. Update Shopify inventory by decreasing stock for sold items
       const response = await fetch('/api/sales', {
         method: 'POST',
         headers: {
@@ -222,7 +531,35 @@ export default function POSPage() {
         throw new Error(data.error || 'Failed to save sale')
       }
 
-      console.log('✅ Sale saved to LOCAL database (not synced to Shopify):', data.sale)
+      console.log('✅ Sale saved to database:', data.sale)
+      if (data.inventoryUpdates) {
+        const successful = data.inventoryUpdates.filter(u => u.status === 'success').length
+        const failed = data.inventoryUpdates.filter(u => u.status === 'error').length
+        if (successful > 0) {
+          console.log(`✅ Inventory updated for ${successful} item(s)`)
+        }
+        if (failed > 0) {
+          console.warn(`⚠️ Failed to update inventory for ${failed} item(s)`)
+        }
+      }
+
+      // Prepare sale data for receipt
+      const receiptData = {
+        id: data.sale.id,
+        items: cartItems,
+        subtotal: subtotal,
+        discount: discountAmount,
+        total: total,
+        paymentMethod: paymentMethod,
+        amountReceived: paymentMethod === 'cash' ? parseFloat(amountReceived) : total,
+        change: paymentMethod === 'cash' ? change : 0,
+        customerName: customerName.trim() || null,
+        customerPhone: customerPhone.trim() || null,
+        createdAt: new Date().toISOString()
+      }
+
+      // Automatically print receipt
+      printReceipt(receiptData)
 
       // Show success
       alert(`✅ Sale completed!\n\nSale #${data.sale.id}\nTotal: Rs ${total.toFixed(2)}\nReceived: Rs ${parseFloat(amountReceived || total).toFixed(2)}\nChange: Rs ${Math.max(0, change).toFixed(2)}`)

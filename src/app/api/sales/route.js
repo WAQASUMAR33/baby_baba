@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { findUserByEmail, createSale, getSales } from '@/lib/sales-db'
+import { getVariant, getLocations, adjustInventory } from '@/lib/shopify'
 
 /**
  * POST /api/sales
- * Create a new sale record
+ * Create a new sale record and update Shopify inventory
  * 
- * NOTE: This API only stores sales in the local database.
- * It does NOT update Shopify inventory or create orders in Shopify.
- * Inventory quantities are read from Shopify for validation only.
+ * This API:
+ * 1. Stores sales in the local database
+ * 2. Updates Shopify inventory by decreasing stock for sold items
+ * 3. Only updates inventory for items with inventory_management = 'shopify'
  */
 export async function POST(request) {
   try {
@@ -68,9 +70,80 @@ export async function POST(request) {
 
     console.log(`✅ Sale created: #${sale.id} - Rs ${sale.total}`)
 
+    // Update Shopify inventory for each item
+    const inventoryUpdates = []
+    try {
+      // Get the first location (or use default)
+      const locations = await getLocations()
+      const locationId = locations.length > 0 ? locations[0].id : null
+
+      if (!locationId) {
+        console.warn('⚠️ No Shopify location found. Inventory will not be updated.')
+      } else {
+        // Update inventory for each item
+        for (const item of body.items) {
+          // Only update if inventory is tracked
+          if (item.inventoryTracked && item.variantId) {
+            try {
+              // Get variant to get inventory_item_id
+              const variant = await getVariant(item.productId, item.variantId)
+              
+              if (variant && variant.inventory_item_id) {
+                // Decrease inventory by the quantity sold (negative adjustment)
+                const quantityAdjustment = -parseInt(item.quantity)
+                await adjustInventory(locationId, variant.inventory_item_id, quantityAdjustment)
+                
+                inventoryUpdates.push({
+                  productId: item.productId,
+                  variantId: item.variantId,
+                  title: item.title,
+                  quantity: item.quantity,
+                  status: 'success'
+                })
+                
+                console.log(`✅ Inventory updated: ${item.title} - Decreased by ${item.quantity}`)
+              } else {
+                console.warn(`⚠️ Variant not found or no inventory_item_id for variant ${item.variantId}`)
+                inventoryUpdates.push({
+                  productId: item.productId,
+                  variantId: item.variantId,
+                  title: item.title,
+                  status: 'skipped',
+                  reason: 'Variant not found or inventory not tracked'
+                })
+              }
+            } catch (inventoryError) {
+              console.error(`❌ Error updating inventory for ${item.title}:`, inventoryError)
+              inventoryUpdates.push({
+                productId: item.productId,
+                variantId: item.variantId,
+                title: item.title,
+                status: 'error',
+                error: inventoryError.message
+              })
+              // Continue with other items even if one fails
+            }
+          } else {
+            inventoryUpdates.push({
+              productId: item.productId,
+              variantId: item.variantId,
+              title: item.title,
+              status: 'skipped',
+              reason: 'Inventory not tracked'
+            })
+          }
+        }
+      }
+    } catch (inventoryError) {
+      // Log error but don't fail the sale
+      console.error('❌ Error updating Shopify inventory:', inventoryError)
+      console.log('⚠️ Sale was created successfully, but inventory update failed')
+    }
+
     return NextResponse.json({
       success: true,
       sale,
+      inventoryUpdates,
       message: 'Sale completed successfully'
     })
   } catch (error) {

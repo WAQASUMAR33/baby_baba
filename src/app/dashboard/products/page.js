@@ -179,61 +179,68 @@ export default function ProductsPage() {
             }
             
             body {
-              margin: 10mm;
+              margin: 5mm;
               font-family: Arial, sans-serif;
             }
             
             .barcode-container {
               display: inline-block;
-              width: 50mm;
-              height: 30mm;
+              width: 2in;
+              height: 1in;
               border: 1px solid #000;
-              padding: 3mm;
+              padding: 2mm;
               margin: 2mm;
               text-align: center;
               page-break-inside: avoid;
+              box-sizing: border-box;
             }
             
             .barcode-title {
-              font-size: 8pt;
+              font-size: 7pt;
               font-weight: bold;
-              margin-bottom: 2mm;
-              line-height: 1.2;
+              margin-bottom: 1mm;
+              line-height: 1.1;
               word-wrap: break-word;
-              max-height: 8mm;
               overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+              max-width: 100%;
             }
             
             .barcode-svg {
               width: 100%;
-              height: 12mm;
+              height: 20mm;
               margin: 1mm 0;
+              display: block;
             }
             
             .barcode-value {
-              font-size: 7pt;
-              margin-top: 1mm;
+              font-size: 6pt;
+              margin-top: 0.5mm;
               font-family: 'Courier New', monospace;
             }
             
             .barcode-price {
-              font-size: 8pt;
+              font-size: 7pt;
               font-weight: bold;
-              margin-top: 1mm;
+              margin-top: 0.5mm;
             }
             
             @media print {
               @page {
-                size: A4;
+                size: letter;
                 margin: 5mm;
               }
               
               body {
                 margin: 0;
+                padding: 5mm;
               }
               
               .barcode-container {
                 border: 1px solid #000;
+                width: 2in;
+                height: 1in;
               }
             }
           </style>
@@ -265,11 +272,18 @@ export default function ProductsPage() {
             
             // Check if JsBarcode is loaded
             if (typeof JsBarcode === 'undefined') {
-              console.error('JsBarcode library not loaded');
+              console.log('Waiting for JsBarcode library to load...');
               // Try again after a short delay
-              setTimeout(generateBarcodes, 100);
+              setTimeout(generateBarcodes, 200);
               return;
             }
+            
+            console.log('JsBarcode loaded, generating barcodes...');
+            console.log('Barcode value:', barcodeValue);
+            console.log('Barcode type:', barcodeType);
+            console.log('Quantity:', quantity);
+            
+            let generatedCount = 0;
             
             // Generate barcodes
             for (let i = 0; i < quantity; i++) {
@@ -277,49 +291,63 @@ export default function ProductsPage() {
               const svg = document.getElementById(barcodeId);
               
               if (svg) {
+                console.log('Generating barcode for:', barcodeId);
                 try {
                   // Try the specified format first
                   JsBarcode(svg, barcodeValue, {
                     format: barcodeType,
-                    width: 2,
-                    height: 40,
+                    width: 1.5,
+                    height: 30,
                     displayValue: false,
-                    margin: 0
+                    margin: 2
                   });
+                  generatedCount++;
+                  console.log('Barcode generated successfully with format:', barcodeType);
                 } catch (e) {
                   console.warn('Barcode generation error with format ' + barcodeType + ', trying CODE128:', e);
                   // Fallback to CODE128 which supports alphanumeric
                   try {
                     JsBarcode(svg, barcodeValue, {
                       format: 'CODE128',
-                      width: 2,
-                      height: 40,
+                      width: 1.5,
+                      height: 30,
                       displayValue: false,
-                      margin: 0
+                      margin: 2
                     });
+                    generatedCount++;
+                    console.log('Barcode generated successfully with CODE128');
                   } catch (e2) {
                     console.error('Barcode generation failed:', e2);
                     svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="8" fill="red">Error</text>';
                   }
                 }
+              } else {
+                console.error('SVG element not found:', barcodeId);
               }
             }
             
-            // Auto-print after barcodes are generated
+            console.log('Generated ' + generatedCount + ' barcodes out of ' + quantity);
+            
+            // Auto-print after barcodes are generated (wait a bit longer to ensure rendering)
             setTimeout(function() {
+              console.log('Triggering print...');
               window.print();
               setTimeout(function() {
                 window.close();
               }, 1000);
-            }, 500);
+            }, 800);
           }
           
-          // Start generating when DOM is ready
-          if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', generateBarcodes);
-          } else {
-            // DOM is already ready, but wait a bit for JsBarcode to load
-            setTimeout(generateBarcodes, 200);
+          // Wait for script to load first
+          window.addEventListener('load', function() {
+            console.log('Window loaded, waiting for JsBarcode...');
+            // Give extra time for JsBarcode to load from CDN
+            setTimeout(generateBarcodes, 500);
+          });
+          
+          // Also try if DOM is already ready
+          if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            setTimeout(generateBarcodes, 500);
           }
         </script>
       </html>
@@ -545,7 +573,7 @@ export default function ProductsPage() {
           )}
           {searchTerm && (
             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-              Search: "{searchTerm}"
+              Search: &quot;{searchTerm}&quot;
               <button
                 onClick={() => setSearchTerm("")}
                 className="ml-2 hover:text-indigo-900"

@@ -19,6 +19,7 @@ export default function SalesPage() {
   useEffect(() => {
     fetchSales()
     fetchPosSales()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchSales = async () => {

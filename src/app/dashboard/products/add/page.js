@@ -575,8 +575,8 @@ export default function AddProductPage() {
                     <p className="text-xs text-gray-500 mt-2">or drag and drop images here</p>
                   </div>
                   <p className="text-xs text-gray-500 mt-2">PNG, JPG, GIF up to 10MB</p>
-                  <p className="text-xs text-blue-600 mt-2 font-medium">ℹ️ Images will upload when you click "Save Product"</p>
-                  <p className="text-xs text-green-600 mt-1 font-medium">💡 Tip: Use "Add by URL" tab for instant uploads (no waiting)</p>
+                  <p className="text-xs text-blue-600 mt-2 font-medium">ℹ️ Images will upload when you click &quot;Save Product&quot;</p>
+                  <p className="text-xs text-green-600 mt-1 font-medium">💡 Tip: Use &quot;Add by URL&quot; tab for instant uploads (no waiting)</p>
                 </div>
 
                 {imagePreviews.length > 0 && (
@@ -585,7 +585,7 @@ export default function AddProductPage() {
                       ✅ {imagePreviews.length} image(s) ready to upload
                     </p>
                     <p className="text-xs text-blue-600 mt-1">
-                      Images will upload to Imgur when you click "Save Product" button
+                      Images will upload to Imgur when you click &quot;Save Product&quot; button
                     </p>
                   </div>
                 )}
@@ -653,7 +653,7 @@ export default function AddProductPage() {
                     ✅ Recommended: Paste direct image URLs from your website, CDN, or image hosting service
                   </p>
                   <p className="text-xs text-green-600 mt-1 font-medium">
-                    💡 Tip: Right-click an image online → "Copy image address"
+                    💡 Tip: Right-click an image online → &quot;Copy image address&quot;
                   </p>
                 </div>
 
@@ -732,7 +732,7 @@ export default function AddProductPage() {
               </div>
             </div>
             <p className="mt-2 text-xs text-gray-500">
-              Customers won't see the cost per item. This is for internal use only.
+              Customers won&apos;t see the cost per item. This is for internal use only.
             </p>
           </div>
 

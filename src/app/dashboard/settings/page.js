@@ -191,7 +191,7 @@ export default function SettingsPage() {
             </>
           ) : (
             <div className="text-center py-8 text-gray-500">
-              <p>Click "Recheck" to verify permissions</p>
+              <p>Click &quot;Recheck&quot; to verify permissions</p>
             </div>
           )}
         </div>

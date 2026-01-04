@@ -374,6 +374,76 @@ export function isShopifyConfigured() {
   return !!(SHOPIFY_STORE_DOMAIN && SHOPIFY_ACCESS_TOKEN)
 }
 
+/**
+ * Get all inventory locations
+ * @returns {Promise<Array>} - Array of locations
+ */
+export async function getLocations() {
+  try {
+    const data = await shopifyFetch('/locations.json')
+    return data.locations || []
+  } catch (error) {
+    console.error('Error fetching locations:', error)
+    throw error
+  }
+}
+
+/**
+ * Get inventory levels for a variant
+ * @param {string|number} inventoryItemId - Inventory item ID
+ * @returns {Promise<Array>} - Array of inventory levels
+ */
+export async function getInventoryLevels(inventoryItemId) {
+  try {
+    const data = await shopifyFetch(`/inventory_levels.json?inventory_item_ids=${inventoryItemId}`)
+    return data.inventory_levels || []
+  } catch (error) {
+    console.error('Error fetching inventory levels:', error)
+    throw error
+  }
+}
+
+/**
+ * Adjust inventory quantity (decrease stock)
+ * @param {string|number} locationId - Location ID
+ * @param {string|number} inventoryItemId - Inventory item ID
+ * @param {number} quantityAdjustment - Quantity to adjust (negative to decrease)
+ * @returns {Promise<object>} - Updated inventory level
+ */
+export async function adjustInventory(locationId, inventoryItemId, quantityAdjustment) {
+  try {
+    const data = await shopifyFetch('/inventory_levels/adjust.json', {
+      method: 'POST',
+      body: JSON.stringify({
+        location_id: locationId,
+        inventory_item_id: inventoryItemId,
+        quantity_adjustment: quantityAdjustment
+      }),
+    })
+    return data.inventory_level || null
+  } catch (error) {
+    console.error('Error adjusting inventory:', error)
+    throw error
+  }
+}
+
+/**
+ * Get variant details including inventory_item_id
+ * @param {string|number} productId - Product ID
+ * @param {string|number} variantId - Variant ID
+ * @returns {Promise<object>} - Variant data with inventory_item_id
+ */
+export async function getVariant(productId, variantId) {
+  try {
+    const product = await getProduct(productId)
+    const variant = product.variants?.find(v => String(v.id) === String(variantId))
+    return variant || null
+  } catch (error) {
+    console.error('Error fetching variant:', error)
+    throw error
+  }
+}
+
 export default {
   getProducts,
   getProduct,
@@ -386,5 +456,9 @@ export default {
   getProductCount,
   searchProducts,
   isShopifyConfigured,
+  getLocations,
+  getInventoryLevels,
+  adjustInventory,
+  getVariant,
 }
 

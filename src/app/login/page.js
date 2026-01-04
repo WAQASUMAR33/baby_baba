@@ -19,7 +19,10 @@ export default function LoginPage() {
     const errorParam = urlParams.get('error')
     
     if (errorParam === 'Configuration') {
-      setError("Server configuration error. Please restart the server and try again.")
+      // Use setTimeout to avoid synchronous setState in effect
+      setTimeout(() => {
+        setError("Server configuration error. Please restart the server and try again.")
+      }, 0)
     }
     
     getSession().then((session) => {
@@ -217,7 +220,7 @@ export default function LoginPage() {
             {/* Register Link */}
             <div className="text-center">
               <p className="text-sm text-gray-600">
-                Don't have an account?{" "}
+                Don&apos;t have an account?{" "}
                 <Link
                   href="/register"
                   className="font-medium text-indigo-600 hover:text-indigo-500 transition-colors duration-200"
