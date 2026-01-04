@@ -10,5 +10,94 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
+}
+
+model user {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique @db.VarChar(255)
+  password  String   @db.VarChar(255)
+  name      String?  @db.VarChar(255)
+  role      String   @default("user") @db.VarChar(50)
+  status    String   @default("active") @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("createdAt")
+  updatedAt DateTime @updatedAt @map("updatedAt")
+
+  sales    Sale[]
+  expenses Expense[]
+
+  @@index([role])
+  @@index([status])
+  @@map("user")
+}
+
+model Sale {
+  id             Int      @id @default(autoincrement())
+  subtotal       Decimal  @db.Decimal(10, 2)
+  discount       Decimal  @db.Decimal(10, 2)
+  total          Decimal  @db.Decimal(10, 2)
+  paymentMethod  String   @db.VarChar(50)
+  amountReceived Decimal  @db.Decimal(10, 2)
+  change         Decimal  @map("change") @db.Decimal(10, 2)
+  customerName   String?  @db.VarChar(255)
+  customerPhone  String?  @db.VarChar(50)
+  status         String   @db.VarChar(50)
+  userId         Int      @map("userId")
+  createdAt      DateTime @default(now()) @map("createdAt")
+  updatedAt      DateTime @updatedAt @map("updatedAt")
+
+  user  user       @relation(fields: [userId], references: [id])
+  items SaleItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("Sale")
+}
+
+model SaleItem {
+  id        Int      @id @default(autoincrement())
+  saleId    Int      @map("saleId")
+  productId String   @db.VarChar(255)
+  variantId String   @db.VarChar(255)
+  title     String   @db.VarChar(255)
+  price     Decimal  @db.Decimal(10, 2)
+  quantity  Int
+  sku       String?  @db.VarChar(255)
+  image     String?  @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("createdAt")
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@map("SaleItem")
+}
+
+model ExpenseTitle {
+  id        Int      @id @default(autoincrement())
+  exp_title String   @unique @db.VarChar(191)
+  createdAt DateTime @default(now()) @map("createdAt")
+
+  expenses Expense[]
+
+  @@map("ExpenseTitle")
+}
+
+model Expense {
+  id              Int      @id @default(autoincrement())
+  exp_title_id    Int      @map("exp_title_id")
+  exp_description String?  @db.VarChar(191)
+  exp_amount      Decimal  @db.Decimal(10, 2)
+  exp_date        DateTime @db.Date
+  added_by        Int      @map("added_by")
+  createdAt       DateTime @default(now()) @map("createdAt")
+  updatedAt       DateTime @updatedAt @map("updatedAt")
+
+  exp_title ExpenseTitle @relation(fields: [exp_title_id], references: [id])
+  user      user         @relation(fields: [added_by], references: [id])
+
+  @@index([exp_title_id])
+  @@index([added_by])
+  @@index([exp_date])
+  @@map("Expense")
 }
