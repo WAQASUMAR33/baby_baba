@@ -444,6 +444,141 @@ export async function getVariant(productId, variantId) {
   }
 }
 
+/**
+ * Fetch all orders from Shopify with pagination support
+ * @param {object} params - Query parameters (status, limit, since_id, etc.)
+ * @returns {Promise<Array>} - Array of orders
+ */
+export async function getOrders(params = {}) {
+  try {
+    const allOrders = []
+    let hasNextPage = true
+    let pageInfo = null
+    const limit = params.limit || 250 // Shopify max is 250 per page
+    const maxOrders = params.maxOrders || 500 // Limit to 500 orders for performance
+    let pageCount = 0
+    const maxPages = 5 // Maximum 5 pages (1250 orders)
+    
+    console.log(`📦 Fetching orders from Shopify (max: ${maxOrders})...`)
+    
+    while (hasNextPage && allOrders.length < maxOrders && pageCount < maxPages) {
+      pageCount++
+      
+      // Build query params
+      const queryParams = new URLSearchParams()
+      queryParams.append('limit', limit)
+      
+      // Add status filter if provided
+      if (params.status) {
+        queryParams.append('status', params.status)
+      }
+      
+      // Add financial_status filter if provided
+      if (params.financial_status) {
+        queryParams.append('financial_status', params.financial_status)
+      }
+      
+      // Add fulfillment_status filter if provided
+      if (params.fulfillment_status) {
+        queryParams.append('fulfillment_status', params.fulfillment_status)
+      }
+      
+      // Add created_at_min filter if provided
+      if (params.created_at_min) {
+        queryParams.append('created_at_min', params.created_at_min)
+      }
+      
+      // Add created_at_max filter if provided
+      if (params.created_at_max) {
+        queryParams.append('created_at_max', params.created_at_max)
+      }
+      
+      // Add pagination cursor if available (for subsequent pages)
+      if (pageInfo) {
+        queryParams.append('page_info', pageInfo)
+      } else if (params.since_id) {
+        // First request with since_id
+        queryParams.append('since_id', params.since_id)
+      }
+      
+      const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/orders.json?${queryParams}`
+      
+      const response = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.text()
+        throw new Error(`Shopify API Error: ${response.status} - ${errorData}`)
+      }
+
+      const data = await response.json()
+      const orders = data.orders || []
+      
+      // If no orders returned, stop pagination
+      if (orders.length === 0) {
+        console.log('⚠️ No more orders returned, stopping pagination')
+        break
+      }
+      
+      allOrders.push(...orders)
+      console.log(`📦 Page ${pageCount}: Fetched ${orders.length} orders (Total: ${allOrders.length})`)
+      
+      // Check for next page using Link header
+      const linkHeader = response.headers.get('Link')
+      if (linkHeader && linkHeader.includes('rel="next"')) {
+        // Extract page_info from the Link header
+        const nextLinkMatch = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="next"/)
+        if (nextLinkMatch && nextLinkMatch[1]) {
+          const newPageInfo = nextLinkMatch[1]
+          
+          // Check if we're getting the same page_info (infinite loop detection)
+          if (newPageInfo === pageInfo) {
+            console.warn('⚠️ Same page_info detected, stopping to prevent infinite loop')
+            break
+          }
+          
+          pageInfo = newPageInfo
+        } else {
+          hasNextPage = false
+        }
+      } else {
+        hasNextPage = false
+      }
+      
+      // Stop if we've reached the limit
+      if (allOrders.length >= maxOrders) {
+        console.log(`⚠️ Reached ${maxOrders} orders limit, stopping pagination`)
+        break
+      }
+    }
+    
+    console.log(`✅ Total orders fetched: ${allOrders.length} (${pageCount} pages)`)
+    return allOrders
+  } catch (error) {
+    console.error('❌ Error fetching orders:', error)
+    throw error
+  }
+}
+
+/**
+ * Fetch a single order by ID
+ * @param {string|number} orderId - Order ID
+ * @returns {Promise<object>} - Order data
+ */
+export async function getOrder(orderId) {
+  try {
+    const data = await shopifyFetch(`/orders/${orderId}.json`)
+    return data.order
+  } catch (error) {
+    console.error('Error fetching order:', error)
+    throw error
+  }
+}
+
 export default {
   getProducts,
   getProduct,
@@ -460,5 +595,7 @@ export default {
   getInventoryLevels,
   adjustInventory,
   getVariant,
+  getOrders,
+  getOrder,
 }
 
