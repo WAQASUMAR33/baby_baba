@@ -6,18 +6,27 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 
 export default function DashboardLayout({ children }) {
-  const { data: session, status } = useSession()
+  const sessionData = useSession()
   const router = useRouter()
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  // Safely destructure session data
+  const session = sessionData?.data
+  const status = sessionData?.status || "loading"
 
   useEffect(() => {
-    if (status === "unauthenticated") {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (mounted && status === "unauthenticated") {
       router.push("/login")
     }
-  }, [status, router])
+  }, [status, router, mounted])
 
-  if (status === "loading") {
+  if (!mounted || status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-gray-600">Loading...</div>

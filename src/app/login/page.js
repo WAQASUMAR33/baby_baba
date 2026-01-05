@@ -11,26 +11,46 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  // Set mounted state after component mounts
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Check if already logged in and handle error query param
   useEffect(() => {
-    // Check for error in URL
-    const urlParams = new URLSearchParams(window.location.search)
-    const errorParam = urlParams.get('error')
+    // Only run after component is mounted
+    if (!mounted || typeof window === 'undefined') return
     
-    if (errorParam === 'Configuration') {
-      // Use setTimeout to avoid synchronous setState in effect
-      setTimeout(() => {
-        setError("Server configuration error. Please restart the server and try again.")
-      }, 0)
-    }
-    
-    getSession().then((session) => {
-      if (session) {
-        router.push("/dashboard")
+    try {
+      // Check for error in URL
+      const urlParams = new URLSearchParams(window.location.search)
+      const errorParam = urlParams.get('error')
+      
+      if (errorParam === 'Configuration') {
+        // Use setTimeout to avoid synchronous setState in effect
+        setTimeout(() => {
+          setError("Server configuration error. Please restart the server and try again.")
+        }, 0)
       }
-    })
-  }, [router])
+      
+      // Check session with error handling
+      getSession()
+        .then((session) => {
+          if (session) {
+            router.push("/dashboard")
+          }
+        })
+        .catch((error) => {
+          console.error("Error checking session:", error)
+          // Don't show error to user, just log it
+        })
+    } catch (error) {
+      console.error("Error in login page useEffect:", error)
+      // Don't show error to user, just log it
+    }
+  }, [router, mounted])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -64,8 +84,16 @@ export default function LoginPage() {
         setLoading(false)
       } else if (result?.ok) {
         // Success - redirect to dashboard
-        router.push("/dashboard")
-        router.refresh()
+        try {
+          await router.push("/dashboard")
+          router.refresh()
+        } catch (routerError) {
+          console.error("Router error:", routerError)
+          // Fallback: use window.location if router fails
+          if (typeof window !== 'undefined') {
+            window.location.href = "/dashboard"
+          }
+        }
       } else {
         setError("Login failed. Please try again.")
         setLoading(false)
@@ -75,6 +103,15 @@ export default function LoginPage() {
       setError("Something went wrong. Please try again.")
       setLoading(false)
     }
+  }
+
+  // Show loading state until component is mounted
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    )
   }
 
   return (
