@@ -85,19 +85,33 @@ export default function LoginPage() {
 
       if (result?.error) {
         // More specific error messages
+        console.error("Login error result:", result.error)
         if (result.error === "CredentialsSignin") {
           setError("Invalid email or password. Please check your credentials and try again.")
         } else if (result.error === "Configuration") {
-          setError("Server configuration error. Please contact support.")
+          setError("Server configuration error. Please check environment variables (NEXTAUTH_URL, NEXTAUTH_SECRET).")
         } else {
           setError(result.error || "Invalid email or password")
         }
         setLoading(false)
       } else if (result?.ok) {
-        // Success - redirect to dashboard
+        // Success - wait a moment for session to be set, then redirect
+        console.log("Login successful, redirecting to dashboard...")
         try {
-          await router.push("/dashboard")
+          // Wait a bit for session to be established
+          await new Promise(resolve => setTimeout(resolve, 100))
+          
+          // Try router first
+          router.push("/dashboard")
           router.refresh()
+          
+          // Fallback: use window.location if router doesn't work
+          setTimeout(() => {
+            if (typeof window !== 'undefined' && window.location.pathname !== '/dashboard') {
+              console.log("Router redirect failed, using window.location")
+              window.location.href = "/dashboard"
+            }
+          }, 500)
         } catch (routerError) {
           console.error("Router error:", routerError)
           // Fallback: use window.location if router fails
@@ -106,6 +120,7 @@ export default function LoginPage() {
           }
         }
       } else {
+        console.error("Login failed - no error or success:", result)
         setError("Login failed. Please try again.")
         setLoading(false)
       }
