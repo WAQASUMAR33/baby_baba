@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   /* config options here */
-  // Turbopack configuration for Next.js 16
-  turbopack: {},
+  // Explicitly use webpack (not Turbopack) for production builds
+  // Turbopack is only for development
   // Webpack configuration for compatibility
   webpack: (config, { isServer }) => {
     if (isServer) {
@@ -12,6 +12,13 @@ const nextConfig = {
       };
     }
     return config;
+  },
+  // Production optimizations
+  productionBrowserSourceMaps: false,
+  // Optimize chunk loading
+  onDemandEntries: {
+    maxInactiveAge: 25 * 1000,
+    pagesBufferLength: 2,
   },
   // Ensure environment variables are available
   env: {
