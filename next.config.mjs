@@ -1,8 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   /* config options here */
-  // Explicitly use webpack (not Turbopack) for production builds
-  // Turbopack is only for development
+  // Explicitly disable Turbopack - use webpack only
+  // This ensures production builds always use webpack
+  experimental: {
+    // Disable Turbopack completely
+    turbo: false,
+  },
   // Webpack configuration for compatibility
   webpack: (config, { isServer }) => {
     if (isServer) {

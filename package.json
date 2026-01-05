@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
+    "clean": "rm -rf .next",
+    "clean:win": "if exist .next rmdir /s /q .next",
+    "rebuild": "npm run clean && npm run build",
     "start": "next start",
     "lint": "eslint",
     "create-user": "node scripts/create-user-sql.js",
