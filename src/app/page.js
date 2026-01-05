@@ -5,25 +5,42 @@ import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false)
+  
+  // Hooks must be called unconditionally
   const sessionData = useSession()
   const router = useRouter()
-  const [mounted, setMounted] = useState(false)
 
   // Safely destructure session data
   const session = sessionData?.data
   const status = sessionData?.status || "loading"
 
   useEffect(() => {
-    setMounted(true)
+    // Use setTimeout to make setState asynchronous
+    setTimeout(() => {
+      setMounted(true)
+    }, 0)
   }, [])
 
   useEffect(() => {
     if (!mounted) return
     
-    if (status === "authenticated") {
-      router.push("/dashboard")
-    } else if (status === "unauthenticated") {
-      router.push("/login")
+    try {
+      if (status === "authenticated") {
+        router.push("/dashboard")
+      } else if (status === "unauthenticated") {
+        router.push("/login")
+      }
+    } catch (err) {
+      console.error("Error in navigation:", err)
+      // Fallback to window.location if router fails
+      if (typeof window !== "undefined") {
+        if (status === "authenticated") {
+          window.location.href = "/dashboard"
+        } else if (status === "unauthenticated") {
+          window.location.href = "/login"
+        }
+      }
     }
   }, [status, router, mounted])
 

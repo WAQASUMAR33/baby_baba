@@ -15,7 +15,10 @@ export default function LoginPage() {
 
   // Set mounted state after component mounts
   useEffect(() => {
-    setMounted(true)
+    // Use setTimeout to make setState asynchronous
+    setTimeout(() => {
+      setMounted(true)
+    }, 0)
   }, [])
 
   // Check if already logged in and handle error query param
@@ -39,7 +42,15 @@ export default function LoginPage() {
       getSession()
         .then((session) => {
           if (session) {
-            router.push("/dashboard")
+            try {
+              router.push("/dashboard")
+            } catch (routerError) {
+              console.error("Router error:", routerError)
+              // Fallback to window.location
+              if (typeof window !== "undefined") {
+                window.location.href = "/dashboard"
+              }
+            }
           }
         })
         .catch((error) => {

@@ -17,7 +17,10 @@ export default function DashboardLayout({ children }) {
   const status = sessionData?.status || "loading"
 
   useEffect(() => {
-    setMounted(true)
+    // Use setTimeout to make setState asynchronous
+    setTimeout(() => {
+      setMounted(true)
+    }, 0)
   }, [])
 
   useEffect(() => {
