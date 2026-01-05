@@ -79,65 +79,111 @@ export async function POST(request) {
 
       if (!locationId) {
         console.warn('⚠️ No Shopify location found. Inventory will not be updated.')
+        // Add warning to all items
+        body.items.forEach(item => {
+          inventoryUpdates.push({
+            productId: item.productId,
+            variantId: item.variantId,
+            title: item.title,
+            status: 'skipped',
+            reason: 'No Shopify location found'
+          })
+        })
       } else {
+        console.log(`📍 Using Shopify location ID: ${locationId}`)
+        
         // Update inventory for each item
         for (const item of body.items) {
           // Only update if inventory is tracked
           if (item.inventoryTracked && item.variantId) {
             try {
+              console.log(`🔄 Updating inventory for: ${item.title} (Variant: ${item.variantId}, Qty: ${item.quantity})`)
+              
               // Get variant to get inventory_item_id
               const variant = await getVariant(item.productId, item.variantId)
               
               if (variant && variant.inventory_item_id) {
                 // Decrease inventory by the quantity sold (negative adjustment)
                 const quantityAdjustment = -parseInt(item.quantity)
-                await adjustInventory(locationId, variant.inventory_item_id, quantityAdjustment)
+                
+                console.log(`📦 Adjusting inventory: Location=${locationId}, Item=${variant.inventory_item_id}, Adjustment=${quantityAdjustment}`)
+                
+                const result = await adjustInventory(locationId, variant.inventory_item_id, quantityAdjustment)
                 
                 inventoryUpdates.push({
                   productId: item.productId,
                   variantId: item.variantId,
                   title: item.title,
                   quantity: item.quantity,
-                  status: 'success'
+                  status: 'success',
+                  inventoryItemId: variant.inventory_item_id,
+                  newQuantity: result?.available || 'unknown'
                 })
                 
-                console.log(`✅ Inventory updated: ${item.title} - Decreased by ${item.quantity}`)
+                console.log(`✅ Inventory updated successfully: ${item.title} - Decreased by ${item.quantity} (New stock: ${result?.available || 'unknown'})`)
               } else {
-                console.warn(`⚠️ Variant not found or no inventory_item_id for variant ${item.variantId}`)
+                console.warn(`⚠️ Variant not found or no inventory_item_id for variant ${item.variantId} of product ${item.productId}`)
                 inventoryUpdates.push({
                   productId: item.productId,
                   variantId: item.variantId,
                   title: item.title,
                   status: 'skipped',
-                  reason: 'Variant not found or inventory not tracked'
+                  reason: variant ? 'No inventory_item_id found' : 'Variant not found'
                 })
               }
             } catch (inventoryError) {
               console.error(`❌ Error updating inventory for ${item.title}:`, inventoryError)
+              console.error('Error details:', {
+                message: inventoryError.message,
+                stack: inventoryError.stack,
+                productId: item.productId,
+                variantId: item.variantId
+              })
               inventoryUpdates.push({
                 productId: item.productId,
                 variantId: item.variantId,
                 title: item.title,
                 status: 'error',
-                error: inventoryError.message
+                error: inventoryError.message || 'Unknown error'
               })
               // Continue with other items even if one fails
             }
           } else {
+            console.log(`⏭️ Skipping inventory update for ${item.title}: ${!item.inventoryTracked ? 'Inventory not tracked' : 'No variant ID'}`)
             inventoryUpdates.push({
               productId: item.productId,
               variantId: item.variantId,
               title: item.title,
               status: 'skipped',
-              reason: 'Inventory not tracked'
+              reason: !item.inventoryTracked ? 'Inventory not tracked in Shopify' : 'No variant ID provided'
             })
           }
         }
       }
+      
+      // Log summary
+      const successful = inventoryUpdates.filter(u => u.status === 'success').length
+      const failed = inventoryUpdates.filter(u => u.status === 'error').length
+      const skipped = inventoryUpdates.filter(u => u.status === 'skipped').length
+      
+      console.log(`📊 Inventory Update Summary: ${successful} successful, ${failed} failed, ${skipped} skipped`)
+      
     } catch (inventoryError) {
       // Log error but don't fail the sale
-      console.error('❌ Error updating Shopify inventory:', inventoryError)
+      console.error('❌ Critical error updating Shopify inventory:', inventoryError)
+      console.error('Error stack:', inventoryError.stack)
       console.log('⚠️ Sale was created successfully, but inventory update failed')
+      
+      // Mark all items as failed
+      body.items.forEach(item => {
+        inventoryUpdates.push({
+          productId: item.productId,
+          variantId: item.variantId,
+          title: item.title,
+          status: 'error',
+          error: inventoryError.message || 'Critical inventory update error'
+        })
+      })
     }
 
     return NextResponse.json({
