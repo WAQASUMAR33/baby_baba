@@ -1,13 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   /* config options here */
-  // Explicitly disable Turbopack - use webpack only
-  // This ensures production builds always use webpack
-  experimental: {
-    // Disable Turbopack completely
-    turbo: false,
-  },
   // Webpack configuration for compatibility
+  // Note: Turbopack is disabled via --webpack flag in build script
   webpack: (config, { isServer }) => {
     if (isServer) {
       // Allow importing TypeScript files from JavaScript
