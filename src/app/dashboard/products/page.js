@@ -170,7 +170,7 @@ export default function ProductsPage() {
       <html>
         <head>
           <title>Barcode Labels - ${productTitle}</title>
-          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js" onerror="window.barcodeLoadError = true;"></script>
           <style>
             * {
               margin: 0;
@@ -264,91 +264,129 @@ export default function ProductsPage() {
     barcodeHTML += `
         </body>
         <script>
-          // Wait for JsBarcode to load and DOM to be ready
-          function generateBarcodes() {
-            const barcodeValue = "${escapedBarcodeValue}";
-            const barcodeType = "${barcodeType}";
-            const quantity = ${barcodeQuantity};
+          (function() {
+            let retryCount = 0;
+            const maxRetries = 20; // 4 seconds max wait (20 * 200ms)
             
-            // Check if JsBarcode is loaded
-            if (typeof JsBarcode === 'undefined') {
-              console.log('Waiting for JsBarcode library to load...');
-              // Try again after a short delay
-              setTimeout(generateBarcodes, 200);
-              return;
-            }
-            
-            console.log('JsBarcode loaded, generating barcodes...');
-            console.log('Barcode value:', barcodeValue);
-            console.log('Barcode type:', barcodeType);
-            console.log('Quantity:', quantity);
-            
-            let generatedCount = 0;
-            
-            // Generate barcodes
-            for (let i = 0; i < quantity; i++) {
-              const barcodeId = "barcode-" + i;
-              const svg = document.getElementById(barcodeId);
+            // Wait for JsBarcode to load and DOM to be ready
+            function generateBarcodes() {
+              const barcodeValue = "${escapedBarcodeValue}";
+              const barcodeType = "${barcodeType}";
+              const quantity = ${barcodeQuantity};
               
-              if (svg) {
-                console.log('Generating barcode for:', barcodeId);
-                try {
-                  // Try the specified format first
-                  JsBarcode(svg, barcodeValue, {
-                    format: barcodeType,
-                    width: 1.5,
-                    height: 30,
-                    displayValue: false,
-                    margin: 2
-                  });
-                  generatedCount++;
-                  console.log('Barcode generated successfully with format:', barcodeType);
-                } catch (e) {
-                  console.warn('Barcode generation error with format ' + barcodeType + ', trying CODE128:', e);
-                  // Fallback to CODE128 which supports alphanumeric
+              // Check if script failed to load
+              if (window.barcodeLoadError) {
+                console.error('Failed to load JsBarcode library from CDN');
+                document.body.innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Error Loading Barcode Library</h2><p>Please check your internet connection and try again.</p></div>';
+                return;
+              }
+              
+              // Check if JsBarcode is loaded
+              if (typeof JsBarcode === 'undefined') {
+                retryCount++;
+                if (retryCount < maxRetries) {
+                  console.log('Waiting for JsBarcode library to load... (' + retryCount + '/' + maxRetries + ')');
+                  setTimeout(generateBarcodes, 200);
+                  return;
+                } else {
+                  console.error('JsBarcode library failed to load after ' + maxRetries + ' attempts');
+                  document.body.innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Error: Barcode Library Timeout</h2><p>Please refresh and try again.</p></div>';
+                  return;
+                }
+              }
+              
+              console.log('JsBarcode loaded, generating barcodes...');
+              console.log('Barcode value:', barcodeValue);
+              console.log('Barcode type:', barcodeType);
+              console.log('Quantity:', quantity);
+              
+              let generatedCount = 0;
+              
+              // Generate barcodes
+              for (let i = 0; i < quantity; i++) {
+                const barcodeId = "barcode-" + i;
+                const svg = document.getElementById(barcodeId);
+                
+                if (svg) {
+                  console.log('Generating barcode for:', barcodeId);
                   try {
+                    // Try the specified format first
                     JsBarcode(svg, barcodeValue, {
-                      format: 'CODE128',
+                      format: barcodeType,
                       width: 1.5,
                       height: 30,
                       displayValue: false,
-                      margin: 2
+                      margin: 2,
+                      background: '#ffffff',
+                      lineColor: '#000000'
                     });
                     generatedCount++;
-                    console.log('Barcode generated successfully with CODE128');
-                  } catch (e2) {
-                    console.error('Barcode generation failed:', e2);
-                    svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="8" fill="red">Error</text>';
+                    console.log('Barcode generated successfully with format:', barcodeType);
+                  } catch (e) {
+                    console.warn('Barcode generation error with format ' + barcodeType + ', trying CODE128:', e);
+                    // Fallback to CODE128 which supports alphanumeric
+                    try {
+                      JsBarcode(svg, barcodeValue, {
+                        format: 'CODE128',
+                        width: 1.5,
+                        height: 30,
+                        displayValue: false,
+                        margin: 2,
+                        background: '#ffffff',
+                        lineColor: '#000000'
+                      });
+                      generatedCount++;
+                      console.log('Barcode generated successfully with CODE128');
+                    } catch (e2) {
+                      console.error('Barcode generation failed:', e2);
+                      svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="8" fill="red">Error: ' + e2.message + '</text>';
+                    }
                   }
+                } else {
+                  console.error('SVG element not found:', barcodeId);
                 }
-              } else {
-                console.error('SVG element not found:', barcodeId);
               }
+              
+              console.log('Generated ' + generatedCount + ' barcodes out of ' + quantity);
+              
+              if (generatedCount === 0) {
+                alert('Failed to generate any barcodes. Please check the console for errors.');
+                return;
+              }
+              
+              // Auto-print after barcodes are generated (wait a bit longer to ensure rendering)
+              setTimeout(function() {
+                console.log('Triggering print...');
+                window.print();
+                // Don't auto-close, let user close manually after printing
+                setTimeout(function() {
+                  if (confirm('Close this window?')) {
+                    window.close();
+                  }
+                }, 2000);
+              }, 1000);
             }
             
-            console.log('Generated ' + generatedCount + ' barcodes out of ' + quantity);
+            // Wait for script to load first
+            if (document.readyState === 'loading') {
+              window.addEventListener('DOMContentLoaded', function() {
+                console.log('DOM loaded, waiting for JsBarcode...');
+                setTimeout(generateBarcodes, 300);
+              });
+            } else {
+              // DOM already loaded
+              console.log('DOM already loaded, waiting for JsBarcode...');
+              setTimeout(generateBarcodes, 300);
+            }
             
-            // Auto-print after barcodes are generated (wait a bit longer to ensure rendering)
-            setTimeout(function() {
-              console.log('Triggering print...');
-              window.print();
-              setTimeout(function() {
-                window.close();
-              }, 1000);
-            }, 800);
-          }
-          
-          // Wait for script to load first
-          window.addEventListener('load', function() {
-            console.log('Window loaded, waiting for JsBarcode...');
-            // Give extra time for JsBarcode to load from CDN
-            setTimeout(generateBarcodes, 500);
-          });
-          
-          // Also try if DOM is already ready
-          if (document.readyState === 'complete' || document.readyState === 'interactive') {
-            setTimeout(generateBarcodes, 500);
-          }
+            // Also listen for window load event
+            window.addEventListener('load', function() {
+              console.log('Window loaded, checking JsBarcode...');
+              if (typeof JsBarcode !== 'undefined') {
+                generateBarcodes();
+              }
+            });
+          })();
         </script>
       </html>
     `
