@@ -892,7 +892,7 @@ export default function ProductsPage() {
                       <select
                         value={product.categoryId || ""}
                         onChange={(e) => handleUpdateCategory(product.id, e.target.value)}
-                        className="text-sm border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                        className="text-xs font-semibold bg-gray-50 border-gray-200 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
                       >
                         <option value="">Uncategorized</option>
                         {categories.map(c => (
@@ -936,94 +936,110 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Barcode Print Modal */}
+      {/* Refined Barcode Print Modal */}
       {showBarcodeModal && selectedProduct && (
-        <div className="fixed inset-0 z-[9999] overflow-y-auto">
-          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-            {/* Background overlay */}
-            <div
-              className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
-              onClick={closeBarcodeModal}
-            ></div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 overflow-x-hidden overflow-y-auto outline-none focus:outline-none">
+          {/* Backdrop with Blur */}
+          <div
+            className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto"
+            onClick={closeBarcodeModal}
+          ></div>
 
-            {/* Modal panel */}
-            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <div className="sm:flex sm:items-start">
-                  <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-green-100 sm:mx-0 sm:h-10 sm:w-10">
-                    <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          {/* Modal Card */}
+          <div className="relative w-full max-w-lg mx-auto bg-white rounded-3xl shadow-2xl transform transition-all duration-300 ease-out scale-100 opacity-100 flex flex-col max-h-[90vh] z-10 overflow-hidden">
+            <div className="flex flex-col h-full">
+              {/* Header */}
+              <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-white">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center text-green-600">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                     </svg>
                   </div>
-                  <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                    <h3 className="text-lg leading-6 font-medium text-gray-900">
-                      Print Barcode Labels (Edit Name)
-                    </h3>
-                    <div className="mt-4">
-                      <div className="mb-4">
-                        <p className="text-sm text-gray-500 mb-2">
-                          <strong>Product:</strong> {selectedProduct.title}
-                        </p>
-                        {selectedProduct.variants?.[0]?.barcode && (
-                          <p className="text-sm text-gray-500 mb-2">
-                            <strong>Barcode:</strong> {selectedProduct.variants[0].barcode}
-                          </p>
-                        )}
-                        {selectedProduct.variants?.[0]?.sku && (
-                          <p className="text-sm text-gray-500 mb-2">
-                            <strong>SKU:</strong> {selectedProduct.variants[0].sku}
-                          </p>
-                        )}
-                      </div>
-                      <div className="mb-4">
-                        <label htmlFor="barcodeLabelName" className="block text-sm font-medium text-gray-700 mb-2">
-                          Label Name (for printing only)
-                        </label>
-                        <input
-                          type="text"
-                          id="barcodeLabelName"
-                          value={barcodeLabelName}
-                          onChange={(e) => setBarcodeLabelName(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                          placeholder="Enter label name"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 mb-2">
-                          Quantity (Number of labels to print)
-                        </label>
-                        <input
-                          type="number"
-                          id="quantity"
-                          min="1"
-                          max="100"
-                          value={barcodeQuantity}
-                          onChange={(e) => setBarcodeQuantity(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                          placeholder="Enter quantity"
-                        />
-                        <p className="mt-2 text-xs text-gray-500">
-                          Enter the number of barcode labels you want to print (1-100)
-                        </p>
-                      </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900 leading-tight">Print Barcodes</h3>
+                    <p className="text-sm text-gray-500">Configure labels for {selectedProduct.title}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={closeBarcodeModal}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-8 space-y-6 overflow-y-auto bg-white">
+                {/* Product Info Card */}
+                <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 space-y-2">
+                  <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <span>Barcode</span>
+                    <span className="text-gray-900">{selectedProduct.variants?.[0]?.barcode || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    <span>SKU</span>
+                    <span className="text-gray-900">{selectedProduct.variants?.[0]?.sku || 'N/A'}</span>
+                  </div>
+                </div>
+
+                <div className="group">
+                  <label htmlFor="barcodeLabelName" className="block text-sm font-bold text-gray-700 mb-2 px-1">
+                    Label Name (for printing only)
+                  </label>
+                  <input
+                    type="text"
+                    id="barcodeLabelName"
+                    value={barcodeLabelName}
+                    onChange={(e) => setBarcodeLabelName(e.target.value)}
+                    className="block w-full px-5 py-3.5 bg-gray-50 border border-transparent focus:border-green-500 focus:bg-white rounded-2xl text-gray-900 shadow-sm transition-all duration-200 outline-none focus:ring-4 focus:ring-green-500/10"
+                    placeholder="Enter label name"
+                  />
+                </div>
+
+                <div className="group">
+                  <label htmlFor="quantity" className="block text-sm font-bold text-gray-700 mb-2 px-1">
+                    Quantity
+                    <span className="text-xs font-normal text-gray-400 ml-2">(Maximum 100)</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      id="quantity"
+                      min="1"
+                      max="100"
+                      value={barcodeQuantity}
+                      onChange={(e) => setBarcodeQuantity(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+                      className="block w-full px-5 py-3.5 bg-gray-50 border border-transparent focus:border-green-500 focus:bg-white rounded-2xl text-gray-900 shadow-sm transition-all duration-200 outline-none focus:ring-4 focus:ring-green-500/10"
+                      placeholder="Number of labels"
+                    />
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 uppercase">
+                      Labels
                     </div>
                   </div>
                 </div>
               </div>
-              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                <button
-                  type="button"
-                  onClick={printBarcodes}
-                  className="w-full inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:ml-3 sm:w-auto sm:text-sm"
-                >
-                  Print {barcodeQuantity} Label{barcodeQuantity !== 1 ? 's' : ''}
-                </button>
+
+              {/* Footer */}
+              <div className="flex items-center justify-end gap-3 p-6 bg-gray-50/80 rounded-b-3xl border-t border-gray-100">
                 <button
                   type="button"
                   onClick={closeBarcodeModal}
-                  className="mt-3 w-full inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                  className="px-6 py-3 text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-100 active:scale-95 transition-all focus:ring-2 focus:ring-gray-200"
                 >
                   Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={printBarcodes}
+                  className="px-8 py-3 text-sm font-bold text-white bg-gradient-to-r from-green-600 to-green-700 rounded-2xl hover:shadow-xl hover:shadow-green-600/30 active:scale-[0.97] transition-all flex items-center justify-center min-w-[160px]"
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  Print {barcodeQuantity} Label{barcodeQuantity !== 1 ? 's' : ''}
                 </button>
               </div>
             </div>
