@@ -40,8 +40,10 @@ model Sale {
   amountReceived Decimal  @db.Decimal(10, 2)
   change         Decimal  @map("change") @db.Decimal(10, 2)
   customerName   String?  @db.VarChar(255)
-  customerPhone  String?  @db.VarChar(50)
   status         String   @db.VarChar(50)
+  commission     Decimal  @default(0) @db.Decimal(10, 2)
+  employeeId     Int?     @map("employeeId")
+  employeeName   String?  @db.VarChar(255) @map("employeeName")
   userId         Int      @map("userId")
   createdAt      DateTime @default(now()) @map("createdAt")
   updatedAt      DateTime @updatedAt @map("updatedAt")
@@ -52,6 +54,7 @@ model Sale {
   @@index([userId])
   @@index([status])
   @@index([createdAt])
+  @@index([employeeId])
   @@map("Sale")
 }
 
@@ -100,4 +103,57 @@ model Expense {
   @@index([added_by])
   @@index([exp_date])
   @@map("Expense")
+}
+
+model Product {
+  id                String   @id @db.VarChar(255) // Shopify Product ID
+  title             String   @db.VarChar(255)
+  description       String?  @db.Text
+  vendor            String?  @db.VarChar(255)
+  productType       String?  @db.VarChar(255) @map("product_type")
+  status            String   @default("active") @db.VarChar(50)
+  image             String?  @db.VarChar(500)
+  handle            String?  @unique @db.VarChar(255)
+  salePrice         Decimal  @default(0) @db.Decimal(10, 2) @map("sale_price")
+  originalPrice     Decimal  @default(0) @db.Decimal(10, 2) @map("original_price")
+  quantity          Int      @default(0)
+  createdAt         DateTime @default(now()) @map("createdAt")
+  updatedAt         DateTime @updatedAt @map("updatedAt")
+
+  variants ProductVariant[]
+
+  @@map("Product")
+}
+
+model ProductVariant {
+  id                String   @id @db.VarChar(255) // Shopify Variant ID
+  productId         String   @map("productId") @db.VarChar(255)
+  title             String?  @db.VarChar(255)
+  price             Decimal  @db.Decimal(10, 2)
+  compareAtPrice    Decimal? @db.Decimal(10, 2) @map("compare_at_price")
+  sku               String?  @db.VarChar(255)
+  barcode           String?  @db.VarChar(255)
+  inventoryQuantity Int      @default(0) @map("inventory_quantity")
+  weight            Decimal? @db.Decimal(10, 2)
+  weightUnit        String?  @db.VarChar(50) @map("weight_unit")
+  createdAt         DateTime @default(now()) @map("createdAt")
+  updatedAt         DateTime @updatedAt @map("updatedAt")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("ProductVariant")
+}
+
+model Employee {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(255)
+  phoneNumber String   @db.VarChar(50) @map("phone_number")
+  city        String   @db.VarChar(100)
+  address     String   @db.Text
+  cnic        String?  @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("createdAt")
+  updatedAt   DateTime @updatedAt @map("updatedAt")
+
+  @@map("Employee")
 }

@@ -43,9 +43,9 @@ async function shopifyFetch(endpoint, options = {}) {
   }
 
   const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}${endpoint}`
-  
+
   console.log('📡 Fetching from Shopify:', url)
-  
+
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -89,24 +89,23 @@ export async function getProducts(params = {}) {
     let hasNextPage = true
     let pageInfo = null
     const limit = 250 // Shopify max is 250 per page
-    const maxProducts = params.maxProducts || 2000 // Limit to 2000 products for performance
+    const maxProducts = params.maxProducts || 50000 // Increased default for full sync
     let pageCount = 0
-    const maxPages = 10 // Maximum 10 pages (2500 products)
-    
+
     console.log(`📦 Fetching products from Shopify (max: ${maxProducts})...`)
-    
-    while (hasNextPage && allProducts.length < maxProducts && pageCount < maxPages) {
+
+    while (hasNextPage && allProducts.length < maxProducts) {
       pageCount++
-      
+
       // Build query params
       const queryParams = new URLSearchParams()
       queryParams.append('limit', limit)
-      
+
       // Add status if provided
       if (params.status) {
         queryParams.append('status', params.status)
       }
-      
+
       // IMPORTANT: Only add order on the FIRST request (not with page_info)
       // Shopify doesn't allow 'order' parameter when using pagination cursors
       if (!pageInfo) {
@@ -117,12 +116,12 @@ export async function getProducts(params = {}) {
           queryParams.append('order', 'created_at desc') // Newest first by default
         }
       }
-      
+
       // Add pagination cursor if available (for subsequent pages)
       if (pageInfo) {
         queryParams.append('page_info', pageInfo)
       }
-      
+
       // Add other params but exclude 'page' and 'limit'
       Object.keys(params).forEach(key => {
         if (key !== 'limit' && key !== 'status' && key !== 'page' && key !== 'page_info' && key !== 'maxProducts' && key !== 'order') {
@@ -131,7 +130,7 @@ export async function getProducts(params = {}) {
       })
 
       const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/products.json?${queryParams}`
-      
+
       const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
@@ -146,16 +145,16 @@ export async function getProducts(params = {}) {
 
       const data = await response.json()
       const products = data.products || []
-      
+
       // If no products returned, stop pagination
       if (products.length === 0) {
         console.log('⚠️ No more products returned, stopping pagination')
         break
       }
-      
+
       allProducts.push(...products)
       console.log(`📦 Page ${pageCount}: Fetched ${products.length} products (Total: ${allProducts.length})`)
-      
+
       // Check for next page using Link header
       const linkHeader = response.headers.get('Link')
       if (linkHeader && linkHeader.includes('rel="next"')) {
@@ -163,13 +162,13 @@ export async function getProducts(params = {}) {
         const nextLinkMatch = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="next"/)
         if (nextLinkMatch && nextLinkMatch[1]) {
           const newPageInfo = nextLinkMatch[1]
-          
+
           // Check if we're getting the same page_info (infinite loop detection)
           if (newPageInfo === pageInfo) {
             console.warn('⚠️ Same page_info detected, stopping to prevent infinite loop')
             break
           }
-          
+
           pageInfo = newPageInfo
         } else {
           hasNextPage = false
@@ -177,14 +176,14 @@ export async function getProducts(params = {}) {
       } else {
         hasNextPage = false
       }
-      
+
       // Stop if we've reached the limit
       if (allProducts.length >= maxProducts) {
         console.log(`⚠️ Reached ${maxProducts} products limit, stopping pagination`)
         break
       }
     }
-    
+
     console.log(`✅ Total products fetched: ${allProducts.length} (${pageCount} pages)`)
     return allProducts
   } catch (error) {
@@ -297,10 +296,10 @@ export async function getCollections(params = {}) {
  */
 export async function getCollection(collectionId, type = 'custom') {
   try {
-    const endpoint = type === 'smart' 
+    const endpoint = type === 'smart'
       ? `/smart_collections/${collectionId}.json`
       : `/custom_collections/${collectionId}.json`
-    
+
     const data = await shopifyFetch(endpoint)
     return data.collection || data.custom_collection || data.smart_collection
   } catch (error) {
@@ -330,10 +329,6 @@ export async function getCollectionProducts(collectionId, params = {}) {
   }
 }
 
-/**
- * Get product count
- * @returns {Promise<number>} - Total product count
- */
 export async function getProductCount() {
   try {
     const data = await shopifyFetch('/products/count.json')
@@ -341,6 +336,132 @@ export async function getProductCount() {
   } catch (error) {
     console.error('Error fetching product count:', error)
     return 0
+  }
+}
+
+/**
+ * Get custom collection count
+ * @returns {Promise<number>} - Count of custom collections
+ */
+export async function getCustomCollectionCount() {
+  try {
+    const data = await shopifyFetch('/custom_collections/count.json')
+    return data.count || 0
+  } catch (error) {
+    console.error('Error fetching custom collection count:', error)
+    return 0
+  }
+}
+
+/**
+ * Get smart collection count
+ * @returns {Promise<number>} - Count of smart collections
+ */
+export async function getSmartCollectionCount() {
+  try {
+    const data = await shopifyFetch('/smart_collections/count.json')
+    return data.count || 0
+  } catch (error) {
+    console.error('Error fetching smart collection count:', error)
+    return 0
+  }
+}
+
+/**
+ * Get total variant count by fetching all products
+ * @returns {Promise<number>} - Total variant count
+ */
+export async function getVariantCount() {
+  try {
+    let totalVariants = 0
+    let hasNextPage = true
+    let pageInfo = null
+    const limit = 250
+
+    console.log('📦 Calculating total variant count (fetching all products)...')
+
+    while (hasNextPage) {
+      const queryParams = new URLSearchParams()
+      queryParams.append('limit', limit)
+      queryParams.append('fields', 'id,variants') // Only fetch needed fields
+
+      if (pageInfo) {
+        queryParams.append('page_info', pageInfo)
+      }
+
+      const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/products.json?${queryParams}`
+
+      const response = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`Shopify API Error: ${response.status}`)
+      }
+
+      const data = await response.json()
+      const products = data.products || []
+
+      if (products.length === 0) break
+
+      // Sum variants for each product
+      let pageVariants = 0
+      products.forEach(p => {
+        pageVariants += p.variants?.length || 0
+      })
+      totalVariants += pageVariants
+      console.log(`📡 Fetched ${products.length} products, added ${pageVariants} variants (Running Total: ${totalVariants})`)
+
+      // Check for next page
+      const linkHeader = response.headers.get('Link')
+      if (linkHeader && linkHeader.includes('rel="next"')) {
+        const nextLinkMatch = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="next"/)
+        if (nextLinkMatch && nextLinkMatch[1]) {
+          pageInfo = nextLinkMatch[1]
+        } else {
+          hasNextPage = false
+        }
+      } else {
+        hasNextPage = false
+      }
+    }
+
+    return totalVariants
+  } catch (error) {
+    console.error('Error calculating variant count:', error)
+    return 0
+  }
+}
+
+/**
+ * Get comprehensive Shopify stats
+ * @returns {Promise<object>} - Stats object
+ */
+export async function getShopifyStats() {
+  try {
+    // Fetch product and collection counts in parallel (fast)
+    const [productCount, customCollCount, smartCollCount] = await Promise.all([
+      getProductCount(),
+      getCustomCollectionCount(),
+      getSmartCollectionCount()
+    ])
+
+    // Fetch variant count (slower as it paginates)
+    const variantCount = await getVariantCount()
+
+    return {
+      products: productCount,
+      variants: variantCount,
+      collections: customCollCount + smartCollCount,
+      customCollections: customCollCount,
+      smartCollections: smartCollCount,
+    }
+  } catch (error) {
+    console.error('Error fetching Shopify stats:', error)
+    throw error
   }
 }
 
@@ -455,44 +576,43 @@ export async function getOrders(params = {}) {
     let hasNextPage = true
     let pageInfo = null
     const limit = params.limit || 250 // Shopify max is 250 per page
-    const maxOrders = params.maxOrders || 500 // Limit to 500 orders for performance
+    const maxOrders = params.maxOrders || 10000 // Increased default
     let pageCount = 0
-    const maxPages = 5 // Maximum 5 pages (1250 orders)
-    
+
     console.log(`📦 Fetching orders from Shopify (max: ${maxOrders})...`)
-    
-    while (hasNextPage && allOrders.length < maxOrders && pageCount < maxPages) {
+
+    while (hasNextPage && allOrders.length < maxOrders) {
       pageCount++
-      
+
       // Build query params
       const queryParams = new URLSearchParams()
       queryParams.append('limit', limit)
-      
+
       // Add status filter if provided
       if (params.status) {
         queryParams.append('status', params.status)
       }
-      
+
       // Add financial_status filter if provided
       if (params.financial_status) {
         queryParams.append('financial_status', params.financial_status)
       }
-      
+
       // Add fulfillment_status filter if provided
       if (params.fulfillment_status) {
         queryParams.append('fulfillment_status', params.fulfillment_status)
       }
-      
+
       // Add created_at_min filter if provided
       if (params.created_at_min) {
         queryParams.append('created_at_min', params.created_at_min)
       }
-      
+
       // Add created_at_max filter if provided
       if (params.created_at_max) {
         queryParams.append('created_at_max', params.created_at_max)
       }
-      
+
       // Add pagination cursor if available (for subsequent pages)
       if (pageInfo) {
         queryParams.append('page_info', pageInfo)
@@ -500,9 +620,9 @@ export async function getOrders(params = {}) {
         // First request with since_id
         queryParams.append('since_id', params.since_id)
       }
-      
+
       const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/orders.json?${queryParams}`
-      
+
       const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
@@ -517,16 +637,16 @@ export async function getOrders(params = {}) {
 
       const data = await response.json()
       const orders = data.orders || []
-      
+
       // If no orders returned, stop pagination
       if (orders.length === 0) {
         console.log('⚠️ No more orders returned, stopping pagination')
         break
       }
-      
+
       allOrders.push(...orders)
       console.log(`📦 Page ${pageCount}: Fetched ${orders.length} orders (Total: ${allOrders.length})`)
-      
+
       // Check for next page using Link header
       const linkHeader = response.headers.get('Link')
       if (linkHeader && linkHeader.includes('rel="next"')) {
@@ -534,13 +654,13 @@ export async function getOrders(params = {}) {
         const nextLinkMatch = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="next"/)
         if (nextLinkMatch && nextLinkMatch[1]) {
           const newPageInfo = nextLinkMatch[1]
-          
+
           // Check if we're getting the same page_info (infinite loop detection)
           if (newPageInfo === pageInfo) {
             console.warn('⚠️ Same page_info detected, stopping to prevent infinite loop')
             break
           }
-          
+
           pageInfo = newPageInfo
         } else {
           hasNextPage = false
@@ -548,14 +668,14 @@ export async function getOrders(params = {}) {
       } else {
         hasNextPage = false
       }
-      
+
       // Stop if we've reached the limit
       if (allOrders.length >= maxOrders) {
         console.log(`⚠️ Reached ${maxOrders} orders limit, stopping pagination`)
         break
       }
     }
-    
+
     console.log(`✅ Total orders fetched: ${allOrders.length} (${pageCount} pages)`)
     return allOrders
   } catch (error) {
@@ -589,6 +709,10 @@ export default {
   getCollection,
   getCollectionProducts,
   getProductCount,
+  getCustomCollectionCount,
+  getSmartCollectionCount,
+  getVariantCount,
+  getShopifyStats,
   searchProducts,
   isShopifyConfigured,
   getLocations,

@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import LoadingSpinner from "@/components/LoadingSpinner"
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
-  
+
   // Filters
   const [statusFilter, setStatusFilter] = useState('')
   const [financialStatusFilter, setFinancialStatusFilter] = useState('')
@@ -22,13 +23,13 @@ export default function OrdersPage() {
   const fetchOrders = async () => {
     try {
       setLoading(true)
-      
+
       // Build query params
       const params = new URLSearchParams()
       if (statusFilter) params.append('status', statusFilter)
       if (financialStatusFilter) params.append('financial_status', financialStatusFilter)
       params.append('limit', '100') // Fetch last 100 orders
-      
+
       const response = await fetch(`/api/shopify/orders?${params}`)
       const data = await response.json()
 
@@ -104,7 +105,7 @@ export default function OrdersPage() {
   // Filter orders by search term
   const filteredOrders = orders.filter(order => {
     if (!searchTerm) return true
-    
+
     const searchLower = searchTerm.toLowerCase()
     return (
       order.name?.toLowerCase().includes(searchLower) ||
@@ -199,9 +200,8 @@ export default function OrdersPage() {
       {/* Orders Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         {loading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading orders...</p>
+          <div className="py-12">
+            <LoadingSpinner size="lg" text="Loading orders..." />
           </div>
         ) : filteredOrders.length === 0 ? (
           <div className="text-center py-12">
@@ -414,4 +414,5 @@ export default function OrdersPage() {
     </div>
   )
 }
+
 

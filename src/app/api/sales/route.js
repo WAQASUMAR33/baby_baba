@@ -15,7 +15,7 @@ import { getVariant, getLocations, adjustInventory } from '@/lib/shopify'
 export async function POST(request) {
   try {
     const session = await getServerSession()
-    
+
     if (!session?.user) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
@@ -24,7 +24,7 @@ export async function POST(request) {
     }
 
     const body = await request.json()
-    
+
     // Validate required fields
     if (!body.items || body.items.length === 0) {
       return NextResponse.json(
@@ -35,7 +35,7 @@ export async function POST(request) {
 
     // Find user by email (using direct SQL)
     const user = await findUserByEmail(session.user.email)
-    
+
     if (!user) {
       return NextResponse.json(
         { success: false, error: 'User not found' },
@@ -52,13 +52,15 @@ export async function POST(request) {
       amountReceived: parseFloat(body.amountReceived) || 0,
       change: parseFloat(body.change) || 0,
       customerName: body.customerName || null,
-      customerPhone: body.customerPhone || null,
       status: body.status || 'completed',
+      employeeId: body.employeeId || null,
+      employeeName: body.employeeName || null,
       items: body.items.map(item => ({
         productId: String(item.productId),
         variantId: String(item.variantId),
         title: item.title,
         price: parseFloat(item.price),
+        originalPrice: parseFloat(item.originalPrice || 0),
         quantity: parseInt(item.quantity),
         sku: item.sku || null,
         image: item.image || null,
@@ -91,25 +93,25 @@ export async function POST(request) {
         })
       } else {
         console.log(`📍 Using Shopify location ID: ${locationId}`)
-        
+
         // Update inventory for each item
         for (const item of body.items) {
           // Only update if inventory is tracked
           if (item.inventoryTracked && item.variantId) {
             try {
               console.log(`🔄 Updating inventory for: ${item.title} (Variant: ${item.variantId}, Qty: ${item.quantity})`)
-              
+
               // Get variant to get inventory_item_id
               const variant = await getVariant(item.productId, item.variantId)
-              
+
               if (variant && variant.inventory_item_id) {
                 // Decrease inventory by the quantity sold (negative adjustment)
                 const quantityAdjustment = -parseInt(item.quantity)
-                
+
                 console.log(`📦 Adjusting inventory: Location=${locationId}, Item=${variant.inventory_item_id}, Adjustment=${quantityAdjustment}`)
-                
+
                 const result = await adjustInventory(locationId, variant.inventory_item_id, quantityAdjustment)
-                
+
                 inventoryUpdates.push({
                   productId: item.productId,
                   variantId: item.variantId,
@@ -119,7 +121,7 @@ export async function POST(request) {
                   inventoryItemId: variant.inventory_item_id,
                   newQuantity: result?.available || 'unknown'
                 })
-                
+
                 console.log(`✅ Inventory updated successfully: ${item.title} - Decreased by ${item.quantity} (New stock: ${result?.available || 'unknown'})`)
               } else {
                 console.warn(`⚠️ Variant not found or no inventory_item_id for variant ${item.variantId} of product ${item.productId}`)
@@ -160,20 +162,20 @@ export async function POST(request) {
           }
         }
       }
-      
+
       // Log summary
       const successful = inventoryUpdates.filter(u => u.status === 'success').length
       const failed = inventoryUpdates.filter(u => u.status === 'error').length
       const skipped = inventoryUpdates.filter(u => u.status === 'skipped').length
-      
+
       console.log(`📊 Inventory Update Summary: ${successful} successful, ${failed} failed, ${skipped} skipped`)
-      
+
     } catch (inventoryError) {
       // Log error but don't fail the sale
       console.error('❌ Critical error updating Shopify inventory:', inventoryError)
       console.error('Error stack:', inventoryError.stack)
       console.log('⚠️ Sale was created successfully, but inventory update failed')
-      
+
       // Mark all items as failed
       body.items.forEach(item => {
         inventoryUpdates.push({
@@ -194,7 +196,7 @@ export async function POST(request) {
     })
   } catch (error) {
     console.error('❌ Error creating sale:', error)
-    
+
     return NextResponse.json(
       {
         success: false,
@@ -213,7 +215,7 @@ export async function POST(request) {
 export async function GET(request) {
   try {
     const session = await getServerSession()
-    
+
     if (!session?.user) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
@@ -247,7 +249,7 @@ export async function GET(request) {
     })
   } catch (error) {
     console.error('❌ Error fetching sales:', error)
-    
+
     return NextResponse.json(
       {
         success: false,

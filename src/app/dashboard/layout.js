@@ -9,7 +9,8 @@ export default function DashboardLayout({ children }) {
   const sessionData = useSession()
   const router = useRouter()
   const pathname = usePathname()
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false) // Mobile sidebar
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false) // Desktop sidebar toggle
   const [mounted, setMounted] = useState(false)
 
   // Safely destructure session data
@@ -115,8 +116,8 @@ export default function DashboardLayout({ children }) {
       ),
     },
     {
-      name: "Users",
-      href: "/dashboard/users",
+      name: "Employee Management",
+      href: "/dashboard/employees",
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -156,9 +157,8 @@ export default function DashboardLayout({ children }) {
 
       {/* Sidebar for mobile */}
       <div
-        className={`fixed inset-y-0 left-0 z-30 w-64 bg-gray-900 transform transition-transform duration-300 ease-in-out lg:hidden ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed inset-y-0 left-0 z-30 w-64 bg-gray-900 transform transition-transform duration-300 ease-in-out lg:hidden ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
       >
         <div className="flex items-center justify-between h-16 px-6 bg-gray-800">
           <h1 className="text-xl font-bold text-white">Baby Baba</h1>
@@ -179,11 +179,10 @@ export default function DashboardLayout({ children }) {
                 key={item.name}
                 href={item.href}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center px-3 py-3 mb-1 text-sm font-medium rounded-lg transition-colors ${
-                  isActive
-                    ? "bg-gray-800 text-white"
-                    : "text-gray-300 hover:bg-gray-800 hover:text-white"
-                }`}
+                className={`flex items-center px-3 py-3 mb-1 text-sm font-medium rounded-lg transition-colors ${isActive
+                  ? "bg-gray-800 text-white"
+                  : "text-gray-300 hover:bg-gray-800 hover:text-white"
+                  }`}
               >
                 <span className={isActive ? "text-white" : "text-gray-400"}>
                   {item.icon}
@@ -196,10 +195,26 @@ export default function DashboardLayout({ children }) {
       </div>
 
       {/* Sidebar for desktop */}
-      <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
+      <div className={`hidden lg:fixed lg:inset-y-0 lg:flex lg:flex-col transition-all duration-300 ${desktopSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'
+        }`}>
         <div className="flex flex-col flex-grow bg-gray-900 overflow-y-auto">
-          <div className="flex items-center h-16 px-6 bg-gray-800">
-            <h1 className="text-xl font-bold text-white">Baby Baba</h1>
+          <div className="flex items-center justify-between h-16 px-6 bg-gray-800">
+            {!desktopSidebarCollapsed && (
+              <h1 className="text-xl font-bold text-white">Baby Baba</h1>
+            )}
+            <button
+              onClick={() => setDesktopSidebarCollapsed(!desktopSidebarCollapsed)}
+              className="text-gray-400 hover:text-white transition-colors"
+              title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {desktopSidebarCollapsed ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                )}
+              </svg>
+            </button>
           </div>
           <nav className="mt-6 px-3 flex-1">
             {navigation.map((item) => {
@@ -208,16 +223,18 @@ export default function DashboardLayout({ children }) {
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`flex items-center px-3 py-3 mb-1 text-sm font-medium rounded-lg transition-colors ${
-                    isActive
+                  className={`flex items-center ${desktopSidebarCollapsed ? 'justify-center' : ''} px-3 py-3 mb-1 text-sm font-medium rounded-lg transition-colors ${isActive
                       ? "bg-gray-800 text-white"
                       : "text-gray-300 hover:bg-gray-800 hover:text-white"
-                  }`}
+                    }`}
+                  title={desktopSidebarCollapsed ? item.name : ''}
                 >
                   <span className={isActive ? "text-white" : "text-gray-400"}>
                     {item.icon}
                   </span>
-                  <span className="ml-3">{item.name}</span>
+                  {!desktopSidebarCollapsed && (
+                    <span className="ml-3">{item.name}</span>
+                  )}
                 </Link>
               )
             })}
@@ -226,7 +243,7 @@ export default function DashboardLayout({ children }) {
       </div>
 
       {/* Main content */}
-      <div className="lg:pl-64 flex flex-col flex-1">
+      <div className={`flex flex-col flex-1 transition-all duration-300 ${desktopSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
         {/* Top header */}
         <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10">
           <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
@@ -240,7 +257,7 @@ export default function DashboardLayout({ children }) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
-              
+
               {/* Search bar */}
               <div className="hidden sm:block">
                 <div className="relative">

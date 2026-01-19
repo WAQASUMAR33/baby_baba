@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { formatPKR } from "@/lib/currency"
+import LoadingSpinner from "@/components/LoadingSpinner"
 
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState([])
@@ -10,7 +11,7 @@ export default function ExpensesPage() {
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({ totalExpenses: 0, totalAmount: 0 })
   const [titleBreakdown, setTitleBreakdown] = useState([])
-  
+
   // Date filters
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -26,7 +27,7 @@ export default function ExpensesPage() {
     try {
       const response = await fetch('/api/expenses/titles')
       const data = await response.json()
-      
+
       if (data.success) {
         setExpenseTitles(data.titles || [])
       }
@@ -38,13 +39,13 @@ export default function ExpensesPage() {
   const fetchExpenses = async () => {
     try {
       setLoading(true)
-      
+
       // Build query params
       const params = new URLSearchParams()
       if (startDate) params.append('startDate', startDate)
       if (endDate) params.append('endDate', endDate)
       if (titleFilter) params.append('exp_title_id', titleFilter)
-      
+
       const response = await fetch(`/api/expenses?${params}`)
       const data = await response.json()
 
@@ -74,12 +75,7 @@ export default function ExpensesPage() {
   if (loading) {
     return (
       <div className="p-6 lg:p-8">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading expenses...</p>
-          </div>
-        </div>
+        <LoadingSpinner size="lg" text="Loading expenses..." />
       </div>
     )
   }
@@ -132,7 +128,7 @@ export default function ExpensesPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
-          
+
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               End Date
@@ -162,7 +158,7 @@ export default function ExpensesPage() {
               ))}
             </select>
           </div>
-          
+
           <div className="flex space-x-2">
             <button
               onClick={handleDateFilter}
@@ -173,7 +169,7 @@ export default function ExpensesPage() {
               </svg>
               Filter
             </button>
-            
+
             {(startDate || endDate || titleFilter) && (
               <button
                 onClick={clearFilters}
@@ -187,7 +183,7 @@ export default function ExpensesPage() {
             )}
           </div>
         </div>
-        
+
         {/* Active filters indicator */}
         {(startDate || endDate || titleFilter) && (
           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">

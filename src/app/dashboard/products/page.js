@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import JsBarcode from "jsbarcode"
+import LoadingSpinner from "@/components/LoadingSpinner"
 
 export default function ProductsPage() {
   const [products, setProducts] = useState([])
@@ -10,60 +11,66 @@ export default function ProductsPage() {
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [filteredProducts, setFilteredProducts] = useState([])
-  
+
   // Filter states
   const [statusFilter, setStatusFilter] = useState("all")
   const [stockFilter, setStockFilter] = useState("all")
   const [vendorFilter, setVendorFilter] = useState("all")
   const [sortBy, setSortBy] = useState("name")
-  
+
   // Barcode print states
   const [showBarcodeModal, setShowBarcodeModal] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [barcodeQuantity, setBarcodeQuantity] = useState(1)
+  const [barcodeLabelName, setBarcodeLabelName] = useState("")
+
+  // Sync state
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState(null)
 
   useEffect(() => {
+    console.log("Products page loaded - Barcode V2")
     fetchProducts()
   }, [])
 
   useEffect(() => {
     let filtered = [...products]
-    
+
     // Apply search filter
     if (searchTerm) {
       filtered = filtered.filter(
         (product) =>
           product.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
           (product.vendor && product.vendor.toLowerCase().includes(searchTerm.toLowerCase())) ||
-          (product.variants && product.variants.some(v => 
+          (product.variants && product.variants.some(v =>
             v.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             v.barcode?.toLowerCase().includes(searchTerm.toLowerCase())
           ))
       )
     }
-    
+
     // Apply status filter
     if (statusFilter !== "all") {
       filtered = filtered.filter(product => product.status === statusFilter)
     }
-    
+
     // Apply stock filter
     if (stockFilter !== "all") {
       filtered = filtered.filter(product => {
         const totalStock = product.variants?.reduce((sum, v) => sum + (v.inventory_quantity || 0), 0) || 0
-        
+
         if (stockFilter === "in-stock") return totalStock > 10
         if (stockFilter === "low-stock") return totalStock > 0 && totalStock <= 10
         if (stockFilter === "out-of-stock") return totalStock === 0
         return true
       })
     }
-    
+
     // Apply vendor filter
     if (vendorFilter !== "all") {
       filtered = filtered.filter(product => product.vendor === vendorFilter)
     }
-    
+
     // Apply sorting
     filtered.sort((a, b) => {
       switch (sortBy) {
@@ -87,10 +94,10 @@ export default function ProductsPage() {
           return 0
       }
     })
-    
+
     setFilteredProducts(filtered)
   }, [searchTerm, products, statusFilter, stockFilter, vendorFilter, sortBy])
-  
+
   // Get unique vendors for filter
   const vendors = [...new Set(products.map(p => p.vendor).filter(Boolean))]
 
@@ -98,25 +105,16 @@ export default function ProductsPage() {
     try {
       setLoading(true)
       setError(null)
-      
-      console.log('🔄 Fetching products from Shopify (newest first, limited to 2000)...')
-      
-      // Fetch with no-cache headers to ensure fresh data
-      const response = await fetch('/api/shopify/products?maxProducts=2000&order=created_at desc', {
-        cache: 'no-store', // Disable Next.js cache
-        headers: {
-          'Cache-Control': 'no-cache', // Disable browser cache
-        }
+
+      console.log('🔄 Fetching products from Local Database...')
+
+      const response = await fetch(`/api/products?limit=2000&sortBy=${sortBy}`, {
+        cache: 'no-store'
       })
       const data = await response.json()
 
       if (data.success) {
-        console.log(`✅ Received ${data.products.length} products (${data.order})`)
-        
-        if (data.limited) {
-          console.warn(`⚠️ Limited to ${data.products.length} products for performance. Showing newest products first.`)
-        }
-        
+        console.log(`✅ Received ${data.products.length} products from local DB`)
         setProducts(data.products)
         setFilteredProducts(data.products)
       } else {
@@ -130,9 +128,44 @@ export default function ProductsPage() {
     }
   }
 
+  const handleSync = async () => {
+    try {
+      setSyncing(true)
+      setSyncResult(null)
+
+      const response = await fetch('/api/products/sync', {
+        method: 'POST'
+      })
+      const data = await response.json()
+
+      if (data.success) {
+        setSyncResult({
+          type: 'success',
+          message: `Successfully synced ${data.imported} products!`
+        })
+        fetchProducts() // Refresh list
+      } else {
+        setSyncResult({
+          type: 'error',
+          message: data.error || 'Sync failed'
+        })
+      }
+    } catch (err) {
+      setSyncResult({
+        type: 'error',
+        message: err.message || 'An error occurred during sync'
+      })
+    } finally {
+      setSyncing(false)
+      // Clear message after 5 seconds
+      setTimeout(() => setSyncResult(null), 5000)
+    }
+  }
+
   const openBarcodeModal = (product) => {
     setSelectedProduct(product)
     setBarcodeQuantity(1)
+    setBarcodeLabelName(product?.title || "Product")
     setShowBarcodeModal(true)
   }
 
@@ -140,6 +173,7 @@ export default function ProductsPage() {
     setShowBarcodeModal(false)
     setSelectedProduct(null)
     setBarcodeQuantity(1)
+    setBarcodeLabelName("")
   }
 
   const printBarcodes = () => {
@@ -147,30 +181,75 @@ export default function ProductsPage() {
 
     const variant = selectedProduct.variants?.[0]
     const barcodeValue = variant?.barcode || variant?.sku || selectedProduct.id.toString()
-    const productTitle = (selectedProduct.title || 'Product').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+    const escapeHtml = (value) =>
+      String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+
+    const productTitle = escapeHtml(barcodeLabelName || selectedProduct.title || "Product")
     const productPrice = variant?.price ? `Rs ${parseFloat(variant.price).toLocaleString('en-PK', { minimumFractionDigits: 0 })}` : ''
-    
-    // Determine barcode type
-    const barcodeType = barcodeValue.length <= 8 ? 'EAN8' : barcodeValue.length <= 13 ? 'EAN13' : 'CODE128'
-    
+
+    const normalizedBarcodeValue = String(barcodeValue ?? "").trim()
+    if (!normalizedBarcodeValue) {
+      alert("No barcode/SKU found for this product.")
+      return
+    }
+    const isDigitsOnly = /^[0-9]+$/.test(normalizedBarcodeValue)
+    const barcodeType =
+      isDigitsOnly && (normalizedBarcodeValue.length === 7 || normalizedBarcodeValue.length === 8)
+        ? "EAN8"
+        : isDigitsOnly && (normalizedBarcodeValue.length === 12 || normalizedBarcodeValue.length === 13)
+          ? "EAN13"
+          : "CODE128"
+
     // Create a new window for printing
     const printWindow = window.open('', '_blank', 'width=800,height=600')
-    
+
     if (!printWindow) {
       alert('Please allow popups to print barcodes')
       return
     }
 
-    // Escape barcode value for JavaScript
-    const escapedBarcodeValue = barcodeValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/'/g, "\\'")
+    const buildBarcodeSvgMarkup = () => {
+      try {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+        svg.setAttribute("xmlns", "http://www.w3.org/2000/svg")
+        svg.setAttribute("class", "barcode-svg")
+
+        const options = {
+          format: barcodeType,
+          width: 1.5,
+          height: 30,
+          displayValue: false,
+          margin: 2,
+          background: "#ffffff",
+          lineColor: "#000000",
+        }
+
+        try {
+          JsBarcode(svg, normalizedBarcodeValue, options)
+        } catch {
+          JsBarcode(svg, normalizedBarcodeValue, { ...options, format: "CODE128" })
+        }
+
+        return new XMLSerializer().serializeToString(svg)
+      } catch (err) {
+        const message = escapeHtml(err?.message || "Barcode error")
+        return `<svg class="barcode-svg" xmlns="http://www.w3.org/2000/svg"><text x="0" y="14" font-size="10" fill="red">${message}</text></svg>`
+      }
+    }
 
     // Generate barcode HTML
     let barcodeHTML = `
       <!DOCTYPE html>
       <html>
         <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
           <title>Barcode Labels - ${productTitle}</title>
-          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js" onerror="window.barcodeLoadError = true;"></script>
           <style>
             * {
               margin: 0;
@@ -250,12 +329,12 @@ export default function ProductsPage() {
 
     // Generate multiple barcode labels
     for (let i = 0; i < barcodeQuantity; i++) {
-      const barcodeId = `barcode-${i}`
+      const barcodeSvgMarkup = buildBarcodeSvgMarkup()
       barcodeHTML += `
         <div class="barcode-container">
           <div class="barcode-title">${productTitle}</div>
-          <svg id="${barcodeId}" class="barcode-svg"></svg>
-          <div class="barcode-value">${barcodeValue}</div>
+          ${barcodeSvgMarkup}
+          <div class="barcode-value">${escapeHtml(normalizedBarcodeValue)}</div>
           ${productPrice ? `<div class="barcode-price">${productPrice}</div>` : ''}
         </div>
       `
@@ -264,149 +343,33 @@ export default function ProductsPage() {
     barcodeHTML += `
         </body>
         <script>
-          (function() {
-            let retryCount = 0;
-            const maxRetries = 20; // 4 seconds max wait (20 * 200ms)
-            
-            // Wait for JsBarcode to load and DOM to be ready
-            function generateBarcodes() {
-              const barcodeValue = "${escapedBarcodeValue}";
-              const barcodeType = "${barcodeType}";
-              const quantity = ${barcodeQuantity};
-              
-              // Check if script failed to load
-              if (window.barcodeLoadError) {
-                console.error('Failed to load JsBarcode library from CDN');
-                document.body.innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Error Loading Barcode Library</h2><p>Please check your internet connection and try again.</p></div>';
-                return;
-              }
-              
-              // Check if JsBarcode is loaded
-              if (typeof JsBarcode === 'undefined') {
-                retryCount++;
-                if (retryCount < maxRetries) {
-                  console.log('Waiting for JsBarcode library to load... (' + retryCount + '/' + maxRetries + ')');
-                  setTimeout(generateBarcodes, 200);
-                  return;
-                } else {
-                  console.error('JsBarcode library failed to load after ' + maxRetries + ' attempts');
-                  document.body.innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Error: Barcode Library Timeout</h2><p>Please refresh and try again.</p></div>';
-                  return;
-                }
-              }
-              
-              console.log('JsBarcode loaded, generating barcodes...');
-              console.log('Barcode value:', barcodeValue);
-              console.log('Barcode type:', barcodeType);
-              console.log('Quantity:', quantity);
-              
-              let generatedCount = 0;
-              
-              // Generate barcodes
-              for (let i = 0; i < quantity; i++) {
-                const barcodeId = "barcode-" + i;
-                const svg = document.getElementById(barcodeId);
-                
-                if (svg) {
-                  console.log('Generating barcode for:', barcodeId);
-                  try {
-                    // Try the specified format first
-                    JsBarcode(svg, barcodeValue, {
-                      format: barcodeType,
-                      width: 1.5,
-                      height: 30,
-                      displayValue: false,
-                      margin: 2,
-                      background: '#ffffff',
-                      lineColor: '#000000'
-                    });
-                    generatedCount++;
-                    console.log('Barcode generated successfully with format:', barcodeType);
-                  } catch (e) {
-                    console.warn('Barcode generation error with format ' + barcodeType + ', trying CODE128:', e);
-                    // Fallback to CODE128 which supports alphanumeric
-                    try {
-                      JsBarcode(svg, barcodeValue, {
-                        format: 'CODE128',
-                        width: 1.5,
-                        height: 30,
-                        displayValue: false,
-                        margin: 2,
-                        background: '#ffffff',
-                        lineColor: '#000000'
-                      });
-                      generatedCount++;
-                      console.log('Barcode generated successfully with CODE128');
-                    } catch (e2) {
-                      console.error('Barcode generation failed:', e2);
-                      svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="8" fill="red">Error: ' + e2.message + '</text>';
-                    }
-                  }
-                } else {
-                  console.error('SVG element not found:', barcodeId);
-                }
-              }
-              
-              console.log('Generated ' + generatedCount + ' barcodes out of ' + quantity);
-              
-              if (generatedCount === 0) {
-                alert('Failed to generate any barcodes. Please check the console for errors.');
-                return;
-              }
-              
-              // Auto-print after barcodes are generated (wait a bit longer to ensure rendering)
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
               setTimeout(function() {
-                console.log('Triggering print...');
-                window.print();
-                // Don't auto-close, let user close manually after printing
-                setTimeout(function() {
-                  if (confirm('Close this window?')) {
-                    window.close();
-                  }
-                }, 2000);
-              }, 1000);
-            }
-            
-            // Wait for script to load first
-            if (document.readyState === 'loading') {
-              window.addEventListener('DOMContentLoaded', function() {
-                console.log('DOM loaded, waiting for JsBarcode...');
-                setTimeout(generateBarcodes, 300);
-              });
-            } else {
-              // DOM already loaded
-              console.log('DOM already loaded, waiting for JsBarcode...');
-              setTimeout(generateBarcodes, 300);
-            }
-            
-            // Also listen for window load event
-            window.addEventListener('load', function() {
-              console.log('Window loaded, checking JsBarcode...');
-              if (typeof JsBarcode !== 'undefined') {
-                generateBarcodes();
-              }
-            });
-          })();
+                if (confirm('Close this window?')) {
+                  window.close();
+                }
+              }, 2000);
+            }, 250);
+          };
         </script>
       </html>
     `
 
     // Write HTML to the new window
+    printWindow.document.open()
     printWindow.document.write(barcodeHTML)
     printWindow.document.close()
-    
+    printWindow.focus()
+
     closeBarcodeModal()
   }
 
   if (loading) {
     return (
       <div className="p-6 lg:p-8">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading products...</p>
-          </div>
-        </div>
+        <LoadingSpinner size="lg" text="Loading products..." />
       </div>
     )
   }
@@ -452,25 +415,58 @@ export default function ProductsPage() {
           </div>
           <div className="flex items-center space-x-3">
             <button
+              onClick={handleSync}
+              disabled={syncing}
+              className={`inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white ${syncing ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'} focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500`}
+            >
+              {syncing ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Sync with Shopify
+                </>
+              )}
+            </button>
+            <button
               onClick={fetchProducts}
               className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
               Refresh
             </button>
-            <Link
-              href="/dashboard/products/add"
-              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add Product
-            </Link>
           </div>
         </div>
+
+        {/* Sync Result Toast */}
+        {syncResult && (
+          <div className={`mt-4 p-4 rounded-lg flex items-center justify-between ${syncResult.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+            <div className="flex items-center">
+              {syncResult.type === 'success' ? (
+                <svg className="w-5 h-5 mr-3 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5 mr-3 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              )}
+              <span className="text-sm font-medium">{syncResult.message}</span>
+            </div>
+            <button onClick={() => setSyncResult(null)} className="text-gray-400 hover:text-gray-600">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
 
         {/* Search Bar */}
         <div className="mt-6">
@@ -507,7 +503,7 @@ export default function ProductsPage() {
             Clear all
           </button>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Status Filter */}
           <div>
@@ -632,18 +628,27 @@ export default function ProductsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span className="text-sm font-medium text-blue-900">
-                ✅ Successfully loaded {products.length} products (newest first) from your Shopify store
+                ✅ Successfully loaded {products.length} products from your local database
               </span>
             </div>
-            <button
-              onClick={fetchProducts}
-              className="text-xs text-blue-600 hover:text-blue-800 font-medium inline-flex items-center"
-            >
-              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Refresh
-            </button>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold"
+              >
+                {syncing ? 'Syncing...' : 'Sync with Shopify'}
+              </button>
+              <button
+                onClick={fetchProducts}
+                className="text-xs text-blue-600 hover:text-blue-800 font-medium inline-flex items-center"
+              >
+                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -754,19 +759,19 @@ export default function ProductsPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Product Details
+                  Product Title
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  SKU / Barcode
+                  Barcode
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Pricing
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Sale Price
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Inventory Stock
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Original Price
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Product Info
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Stock
                 </th>
                 <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -776,207 +781,41 @@ export default function ProductsPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredProducts.map((product) => {
                 const variant = product.variants?.[0]
-                const totalStock = product.variants?.reduce((sum, v) => sum + (v.inventory_quantity || 0), 0) || 0
-                const isLowStock = totalStock > 0 && totalStock <= 10
-                const isOutOfStock = totalStock === 0
 
                 return (
                   <tr key={product.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-16 w-16">
-                          {product.image?.src || product.images?.[0]?.src ? (
-                            <img
-                              src={product.image?.src || product.images[0]?.src}
-                              alt={product.title}
-                              className="h-16 w-16 rounded-lg object-cover border border-gray-200"
-                            />
-                          ) : (
-                            <div className="h-16 w-16 rounded-lg bg-gray-100 flex items-center justify-center border border-gray-200">
-                              <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                              </svg>
-                            </div>
-                          )}
-                        </div>
-                        <div className="ml-4 max-w-md">
-                          <div className="text-sm font-semibold text-gray-900 line-clamp-2">
-                            {product.title}
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            <span className="font-medium">Vendor:</span> {product.vendor || 'No vendor'}
-                          </div>
-                          {product.product_type && (
-                            <div className="text-xs text-gray-500">
-                              <span className="font-medium">Type:</span> {product.product_type}
-                            </div>
-                          )}
-                          {product.variants && product.variants.length > 1 && (
-                            <div className="text-xs text-indigo-600 font-medium mt-1">
-                              {product.variants.length} variants
-                            </div>
-                          )}
-                          {product.tags && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {product.tags.split(',').slice(0, 3).map((tag, idx) => (
-                                <span key={idx} className="inline-block px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded">
-                                  {tag.trim()}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-semibold text-gray-900 line-clamp-2">
+                        {product.title}
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {variant?.sku || '-'}
-                      </div>
-                      {variant?.barcode && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          {variant.barcode}
+                      {product.tags && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {product.tags.split(',').slice(0, 3).map((tag, idx) => (
+                            <span key={idx} className="inline-block px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded">
+                              {tag.trim()}
+                            </span>
+                          ))}
                         </div>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="space-y-1">
-                        <div className="text-base font-bold text-gray-900">
-                          Rs {parseFloat(variant?.price || 0).toLocaleString('en-PK', { minimumFractionDigits: 0 })}
-                        </div>
-                        {variant?.compare_at_price && parseFloat(variant.compare_at_price) > parseFloat(variant.price) && (
-                          <>
-                            <div className="text-xs text-gray-500 line-through">
-                              Rs {parseFloat(variant.compare_at_price).toLocaleString('en-PK', { minimumFractionDigits: 0 })}
-                            </div>
-                            <div className="inline-block px-2 py-0.5 text-xs font-semibold bg-red-100 text-red-800 rounded">
-                              {Math.round(((parseFloat(variant.compare_at_price) - parseFloat(variant.price)) / parseFloat(variant.compare_at_price)) * 100)}% OFF
-                            </div>
-                          </>
-                        )}
+                      <div className="text-sm text-gray-900">
+                        {variant?.barcode || '-'}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="space-y-2">
-                        {/* Check if inventory tracking is enabled */}
-                        {variant?.inventory_management === null ? (
-                          <div className="text-center py-2">
-                            <div className="inline-flex items-center px-3 py-2 bg-gray-100 rounded-lg">
-                              <svg className="w-5 h-5 text-gray-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <div className="text-left">
-                                <div className="text-sm font-medium text-gray-900">Not Tracked</div>
-                                <div className="text-xs text-gray-500">Enable in Shopify</div>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            {/* Main Stock Display */}
-                            <div className="flex items-center space-x-2">
-                              <div className={`flex items-center justify-center w-10 h-10 rounded-lg ${
-                                isOutOfStock 
-                                  ? 'bg-red-100'
-                                  : isLowStock
-                                  ? 'bg-yellow-100'
-                                  : 'bg-green-100'
-                              }`}>
-                                {isOutOfStock ? (
-                                  <svg className={`w-5 h-5 text-red-600`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                  </svg>
-                                ) : isLowStock ? (
-                                  <svg className={`w-5 h-5 text-yellow-600`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                  </svg>
-                                ) : (
-                                  <svg className={`w-5 h-5 text-green-600`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                  </svg>
-                                )}
-                              </div>
-                              <div>
-                                <div className={`text-2xl font-bold ${
-                                  isOutOfStock 
-                                    ? 'text-red-600'
-                                    : isLowStock
-                                    ? 'text-yellow-600'
-                                    : 'text-green-600'
-                                }`}>
-                                  {totalStock >= 0 ? totalStock : 0}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {isOutOfStock ? 'Out of stock' : isLowStock ? 'Low stock' : 'In stock'}
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {/* Variant Stock Breakdown */}
-                            {product.variants && product.variants.length > 1 && (
-                              <div className="pl-12">
-                                <div className="text-xs text-gray-500 space-y-1">
-                                  {product.variants.slice(0, 3).map((v, idx) => {
-                                    const vStock = v.inventory_quantity >= 0 ? v.inventory_quantity : 0
-                                    return (
-                                      <div key={idx} className="flex justify-between items-center">
-                                        {v.title !== 'Default Title' && (
-                                          <>
-                                            <span className="text-gray-700 truncate max-w-[120px]">{v.title}:</span>
-                                            <span className={`font-semibold ml-2 ${
-                                              vStock === 0 
-                                                ? 'text-red-600' 
-                                                : vStock <= 5 
-                                                ? 'text-yellow-600' 
-                                                : 'text-green-600'
-                                            }`}>
-                                              {vStock}
-                                            </span>
-                                          </>
-                                        )}
-                                      </div>
-                                    )
-                                  })}
-                                  {product.variants.length > 3 && (
-                                    <div className="text-indigo-600 font-medium">+{product.variants.length - 3} more</div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        )}
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <div className="text-sm font-semibold text-gray-900">
+                        Rs {parseFloat(product.sale_price || 0).toLocaleString('en-PK')}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="space-y-2">
-                        {/* Status Badge */}
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                          product.status === 'active' 
-                            ? 'bg-green-100 text-green-800'
-                            : product.status === 'draft'
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {product.status || 'draft'}
-                        </span>
-                        
-                        {/* Additional Info */}
-                        <div className="text-xs text-gray-500 space-y-1">
-                          {product.created_at && (
-                            <div>
-                              <span className="font-medium">Created:</span> {new Date(product.created_at).toLocaleDateString('en-PK')}
-                            </div>
-                          )}
-                          {product.images && product.images.length > 0 && (
-                            <div>
-                              <span className="font-medium">Images:</span> {product.images.length}
-                            </div>
-                          )}
-                          {product.options && product.options.length > 0 && (
-                            <div>
-                              <span className="font-medium">Options:</span> {product.options.length}
-                            </div>
-                          )}
-                        </div>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-gray-500">
+                      <div className="text-sm">
+                        Rs {parseFloat(product.original_price || 0).toLocaleString('en-PK')}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <div className={`text-sm font-bold ${product.quantity <= 0 ? 'text-red-600' : product.quantity <= 10 ? 'text-yellow-600' : 'text-green-600'}`}>
+                        {product.quantity || 0}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -991,17 +830,15 @@ export default function ProductsPage() {
                           </svg>
                           Print Barcode
                         </button>
-                        <a
-                          href={`https://${process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN || 'your-store.myshopify.com'}/admin/products/${product.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <Link
+                          href={`/dashboard/products/${product.id}`}
                           className="text-indigo-600 hover:text-indigo-900 font-medium inline-flex items-center"
                         >
-                          View
+                          Edit
                           <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
-                        </a>
+                        </Link>
                       </div>
                     </td>
                   </tr>
@@ -1033,7 +870,7 @@ export default function ProductsPage() {
                   </div>
                   <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
                     <h3 className="text-lg leading-6 font-medium text-gray-900">
-                      Print Barcode Labels
+                      Print Barcode Labels (Edit Name)
                     </h3>
                     <div className="mt-4">
                       <div className="mb-4">
@@ -1050,6 +887,19 @@ export default function ProductsPage() {
                             <strong>SKU:</strong> {selectedProduct.variants[0].sku}
                           </p>
                         )}
+                      </div>
+                      <div className="mb-4">
+                        <label htmlFor="barcodeLabelName" className="block text-sm font-medium text-gray-700 mb-2">
+                          Label Name (for printing only)
+                        </label>
+                        <input
+                          type="text"
+                          id="barcodeLabelName"
+                          value={barcodeLabelName}
+                          onChange={(e) => setBarcodeLabelName(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="Enter label name"
+                        />
                       </div>
                       <div>
                         <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 mb-2">
@@ -1096,4 +946,3 @@ export default function ProductsPage() {
     </div>
   )
 }
-

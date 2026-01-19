@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import LoadingSpinner from "@/components/LoadingSpinner"
 
 export default function ProductListingsPage() {
   const [listings, setListings] = useState([])
@@ -32,12 +33,7 @@ export default function ProductListingsPage() {
   if (loading) {
     return (
       <div className="p-6 lg:p-8">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading product listings...</p>
-          </div>
-        </div>
+        <LoadingSpinner size="lg" text="Loading product listings..." />
       </div>
     )
   }
@@ -101,7 +97,7 @@ export default function ProductListingsPage() {
           </svg>
           <div className="ml-3">
             <p className="text-sm text-blue-700">
-              Product listings are products that are published and available in your sales channels. 
+              Product listings are products that are published and available in your sales channels.
               This uses the Shopify Product Listing API.
             </p>
           </div>
@@ -148,7 +144,7 @@ export default function ProductListingsPage() {
                 <h3 className="text-sm font-semibold text-gray-900 truncate" title={listing.title}>
                   {listing.title}
                 </h3>
-                
+
                 {listing.vendor && (
                   <p className="text-xs text-gray-500 mt-1">{listing.vendor}</p>
                 )}
@@ -161,7 +157,7 @@ export default function ProductListingsPage() {
                       </p>
                     )}
                   </div>
-                  
+
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                     Published
                   </span>

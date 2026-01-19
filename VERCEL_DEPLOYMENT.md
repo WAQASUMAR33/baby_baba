@@ -122,3 +122,4 @@ This will enable NextAuth debug logging (check Vercel function logs).
 - [ ] Checked browser console for client-side errors
 - [ ] Checked Vercel function logs for server-side errors
 
+

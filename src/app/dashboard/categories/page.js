@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import LoadingSpinner from "@/components/LoadingSpinner"
 
 export default function CategoriesPage() {
   const [collections, setCollections] = useState([])
@@ -32,12 +33,7 @@ export default function CategoriesPage() {
   if (loading) {
     return (
       <div className="p-6 lg:p-8">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading categories...</p>
-          </div>
-        </div>
+        <LoadingSpinner size="lg" text="Loading categories..." />
       </div>
     )
   }
@@ -133,12 +129,12 @@ export default function CategoriesPage() {
                 <h3 className="text-lg font-semibold text-gray-900" title={collection.title}>
                   {collection.title}
                 </h3>
-                
+
                 {collection.body_html && (
-                  <p 
+                  <p
                     className="text-sm text-gray-600 mt-2 line-clamp-2"
-                    dangerouslySetInnerHTML={{ 
-                      __html: collection.body_html.replace(/<[^>]*>/g, '') 
+                    dangerouslySetInnerHTML={{
+                      __html: collection.body_html.replace(/<[^>]*>/g, '')
                     }}
                   />
                 )}
@@ -147,12 +143,11 @@ export default function CategoriesPage() {
                   <span className="text-sm text-gray-500">
                     {collection.products_count || 0} products
                   </span>
-                  
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    collection.published_at 
-                      ? 'bg-green-100 text-green-800' 
+
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${collection.published_at
+                      ? 'bg-green-100 text-green-800'
                       : 'bg-gray-100 text-gray-800'
-                  }`}>
+                    }`}>
                     {collection.published_at ? 'Published' : 'Draft'}
                   </span>
                 </div>
@@ -176,6 +171,7 @@ export default function CategoriesPage() {
     </div>
   )
 }
+
 
 
 

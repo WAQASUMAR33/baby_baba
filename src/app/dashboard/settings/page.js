@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import LoadingSpinner from "@/components/LoadingSpinner"
 
 export default function SettingsPage() {
   const [permissions, setPermissions] = useState(null)
@@ -31,12 +32,7 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="p-6 lg:p-8">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Checking permissions...</p>
-          </div>
-        </div>
+        <LoadingSpinner size="lg" text="Checking permissions..." />
       </div>
     )
   }
@@ -124,7 +120,7 @@ export default function SettingsPage() {
                       {permissions.permissions.allGranted ? 'All Permissions Granted' : 'Some Permissions Missing'}
                     </h3>
                     <p className={`text-sm mt-1 ${permissions.permissions.allGranted ? 'text-green-700' : 'text-yellow-700'}`}>
-                      {permissions.permissions.allGranted 
+                      {permissions.permissions.allGranted
                         ? 'Your app has all required permissions to function properly.'
                         : `Missing ${permissions.permissions.missing.length} permission(s). Some features may not work.`
                       }
@@ -154,9 +150,8 @@ export default function SettingsPage() {
                           <p className="text-xs text-gray-500">{perm.description}</p>
                         </div>
                       </div>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        hasIt ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                      }`}>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${hasIt ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
                         {hasIt ? 'Granted' : 'Missing'}
                       </span>
                     </div>
@@ -213,9 +208,8 @@ export default function SettingsPage() {
                       <p className="text-sm font-medium text-gray-900">{feature}</p>
                       <p className="text-xs text-gray-500">Requires: {perms.join(', ')}</p>
                     </div>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      allGranted ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                    }`}>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${allGranted ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                      }`}>
                       {allGranted ? 'Available' : 'Unavailable'}
                     </span>
                   </div>
