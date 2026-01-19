@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
+import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { findUserByEmail, createSale, getSales } from '@/lib/sales-db'
 import { getVariant, getLocations, adjustInventory } from '@/lib/shopify'
 
@@ -14,11 +15,12 @@ import { getVariant, getLocations, adjustInventory } from '@/lib/shopify'
  */
 export async function POST(request) {
   try {
-    const session = await getServerSession()
+    const session = await getServerSession(authOptions)
 
-    if (!session?.user) {
+    if (!session?.user?.email) {
+      console.error('❌ Unauthorized: No session or email found')
       return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
+        { success: false, error: 'Unauthorized: Please log in again' },
         { status: 401 }
       )
     }
@@ -34,11 +36,16 @@ export async function POST(request) {
     }
 
     // Find user by email (using direct SQL)
+    console.log(`🔍 Looking up user for sale: ${session.user.email}`)
     const user = await findUserByEmail(session.user.email)
 
     if (!user) {
+      console.error(`❌ User not found in database for email: ${session.user.email}`)
       return NextResponse.json(
-        { success: false, error: 'User not found' },
+        {
+          success: false,
+          error: `User record not found for ${session.user.email}. Please ensure your account is correctly set up.`
+        },
         { status: 404 }
       )
     }

@@ -40,7 +40,7 @@ export async function findUserByEmail(email) {
     const connection = getPool()
     const [users] = await connection.execute(
       'SELECT * FROM User WHERE email = ?',
-      [email]
+      [email.trim().toLowerCase()]
     )
     return users.length > 0 ? users[0] : null
   } catch (error) {
