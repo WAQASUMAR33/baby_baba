@@ -16,7 +16,9 @@ export default function ProductsPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [stockFilter, setStockFilter] = useState("all")
   const [vendorFilter, setVendorFilter] = useState("all")
+  const [categoryFilter, setCategoryFilter] = useState("all")
   const [sortBy, setSortBy] = useState("name")
+  const [categories, setCategories] = useState([])
 
   // Barcode print states
   const [showBarcodeModal, setShowBarcodeModal] = useState(false)
@@ -31,6 +33,7 @@ export default function ProductsPage() {
   useEffect(() => {
     console.log("Products page loaded - Barcode V2")
     fetchProducts()
+    fetchCategories()
   }, [])
 
   useEffect(() => {
@@ -71,6 +74,11 @@ export default function ProductsPage() {
       filtered = filtered.filter(product => product.vendor === vendorFilter)
     }
 
+    // Apply category filter
+    if (categoryFilter !== "all") {
+      filtered = filtered.filter(product => product.categoryId?.toString() === categoryFilter)
+    }
+
     // Apply sorting
     filtered.sort((a, b) => {
       switch (sortBy) {
@@ -98,7 +106,41 @@ export default function ProductsPage() {
     setFilteredProducts(filtered)
   }, [searchTerm, products, statusFilter, stockFilter, vendorFilter, sortBy])
 
-  // Get unique vendors for filter
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch('/api/categories')
+      const data = await response.json()
+      if (data.success) {
+        setCategories(data.categories)
+      }
+    } catch (err) {
+      console.error('Error fetching categories:', err)
+    }
+  }
+
+  const handleUpdateCategory = async (productId, categoryId) => {
+    try {
+      const response = await fetch(`/api/products/${productId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categoryId: categoryId === "" ? null : parseInt(categoryId) })
+      })
+      const data = await response.json()
+      if (data.success) {
+        // Update local state to reflect change immediately
+        setProducts(prev => prev.map(p =>
+          p.id === productId
+            ? { ...p, categoryId: categoryId === "" ? null : parseInt(categoryId), categoryName: categories.find(c => c.id === parseInt(categoryId))?.name || null }
+            : p
+        ))
+      } else {
+        alert(data.error || 'Failed to update category')
+      }
+    } catch (err) {
+      alert(err.message || 'An error occurred')
+    }
+  }
+
   const vendors = [...new Set(products.map(p => p.vendor).filter(Boolean))]
 
   const fetchProducts = async () => {
@@ -496,6 +538,7 @@ export default function ProductsPage() {
               setStatusFilter("all")
               setStockFilter("all")
               setVendorFilter("all")
+              setCategoryFilter("all")
               setSortBy("name")
             }}
             className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
@@ -552,6 +595,24 @@ export default function ProductsPage() {
             </select>
           </div>
 
+          {/* Category Filter */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-2">Category</label>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="all">All Categories</option>
+              <option value="none">Uncategorized</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Sort By */}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-2">Sort By</label>
@@ -588,6 +649,17 @@ export default function ProductsPage() {
               Stock: {stockFilter.replace("-", " ")}
               <button
                 onClick={() => setStockFilter("all")}
+                className="ml-2 hover:text-indigo-900"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {categoryFilter !== "all" && (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+              Category: {categoryFilter === "none" ? "Uncategorized" : (categories.find(c => c.id.toString() === categoryFilter)?.name || "Unknown")}
+              <button
+                onClick={() => setCategoryFilter("all")}
                 className="ml-2 hover:text-indigo-900"
               >
                 ×
@@ -770,6 +842,9 @@ export default function ProductsPage() {
                 <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Original Price
                 </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Category
+                </th>
                 <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Stock
                 </th>
@@ -812,6 +887,18 @@ export default function ProductsPage() {
                       <div className="text-sm">
                         Rs {parseFloat(product.original_price || 0).toLocaleString('en-PK')}
                       </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <select
+                        value={product.categoryId || ""}
+                        onChange={(e) => handleUpdateCategory(product.id, e.target.value)}
+                        className="text-sm border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      >
+                        <option value="">Uncategorized</option>
+                        {categories.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <div className={`text-sm font-bold ${product.quantity <= 0 ? 'text-red-600' : product.quantity <= 10 ? 'text-yellow-600' : 'text-green-600'}`}>

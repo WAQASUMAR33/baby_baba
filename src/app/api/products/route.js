@@ -42,11 +42,13 @@ export async function GET(request) {
 
         let query = `
       SELECT p.id, p.title, p.vendor, p.product_type, p.status, p.handle, p.updatedAt,
-             p.original_price, p.sale_price, p.quantity,
+             p.original_price, p.sale_price, p.quantity, p.categoryId,
+             c.name as categoryName,
              v.id as variant_id, v.title as variant_title, v.price, v.compare_at_price, 
              v.sku, v.barcode, v.inventory_quantity, v.weight, v.weight_unit
       FROM Product p
       LEFT JOIN ProductVariant v ON p.id = v.productId
+      LEFT JOIN Category c ON p.categoryId = c.id
       WHERE 1=1
     `;
         const params = [];
@@ -97,6 +99,8 @@ export async function GET(request) {
                     sale_price: row.sale_price,
                     original_price: row.original_price,
                     quantity: row.quantity,
+                    categoryId: row.categoryId,
+                    categoryName: row.categoryName,
                     updatedAt: row.updatedAt,
                     variants: []
                 });

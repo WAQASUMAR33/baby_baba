@@ -144,8 +144,28 @@ export async function getLocalProductCount() {
   }
 }
 
+/**
+ * Update the category of a product
+ * @param {string} productId 
+ * @param {number|null} categoryId 
+ */
+export async function updateProductCategory(productId, categoryId) {
+  const connection = getPool()
+  try {
+    await connection.execute(
+      'UPDATE Product SET categoryId = ?, updatedAt = NOW() WHERE id = ?',
+      [categoryId, String(productId)]
+    )
+    return { success: true }
+  } catch (error) {
+    console.error(`❌ Error updating category for product ${productId}:`, error)
+    throw error
+  }
+}
+
 export default {
   upsertProduct,
   clearProducts,
   getLocalProductCount,
+  updateProductCategory,
 }
