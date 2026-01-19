@@ -116,6 +116,7 @@ model Product {
   handle            String?  @unique @db.VarChar(255)
   salePrice         Decimal  @default(0) @db.Decimal(10, 2) @map("sale_price")
   originalPrice     Decimal  @default(0) @db.Decimal(10, 2) @map("original_price")
+  costPrice         Decimal  @default(0) @db.Decimal(10, 2) @map("cost_price")
   quantity          Int      @default(0)
   categoryId        Int?     @map("categoryId")
   createdAt         DateTime @default(now()) @map("createdAt")

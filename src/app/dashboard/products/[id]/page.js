@@ -13,6 +13,7 @@ export default function ProductDetailPage({ params }) {
     const [deleting, setDeleting] = useState(false)
     const [error, setError] = useState(null)
     const [success, setSuccess] = useState(null)
+    const [categories, setCategories] = useState([])
 
     // Form states
     const [formData, setFormData] = useState({
@@ -22,12 +23,27 @@ export default function ProductDetailPage({ params }) {
         barcode: "",
         original_price: 0,
         sale_price: 0,
-        quantity: 0
+        cost_price: 0,
+        quantity: 0,
+        categoryId: ""
     })
 
     useEffect(() => {
         fetchProduct()
+        fetchCategories()
     }, [id])
+
+    const fetchCategories = async () => {
+        try {
+            const res = await fetch('/api/categories')
+            const data = await res.json()
+            if (data.success) {
+                setCategories(data.categories || [])
+            }
+        } catch (err) {
+            console.error("Failed to fetch categories:", err)
+        }
+    }
 
     const fetchProduct = async () => {
         try {
@@ -43,7 +59,9 @@ export default function ProductDetailPage({ params }) {
                     barcode: data.product.variants?.[0]?.barcode || "",
                     original_price: data.product.original_price || 0,
                     sale_price: data.product.sale_price || 0,
-                    quantity: data.product.quantity || 0
+                    cost_price: data.product.cost_price || 0,
+                    quantity: data.product.quantity || 0,
+                    categoryId: data.product.categoryId || ""
                 })
             } else {
                 setError(data.error || "Product not found")
@@ -199,6 +217,22 @@ export default function ProductDetailPage({ params }) {
                         </div>
 
                         <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                            <select
+                                value={formData.categoryId}
+                                onChange={(e) => setFormData({ ...formData, categoryId: e.target.value ? parseInt(e.target.value) : "" })}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            >
+                                <option value="">No Category</option>
+                                {categories.map((category) => (
+                                    <option key={category.id} value={category.id}>
+                                        {category.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
                             <input
                                 type="text"
@@ -208,36 +242,44 @@ export default function ProductDetailPage({ params }) {
                             />
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Sale Price</label>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    value={formData.sale_price}
-                                    onChange={(e) => setFormData({ ...formData, sale_price: parseFloat(e.target.value) })}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Original Price</label>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    value={formData.original_price}
-                                    onChange={(e) => setFormData({ ...formData, original_price: parseFloat(e.target.value) })}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity (Stock)</label>
-                                <input
-                                    type="number"
-                                    value={formData.quantity}
-                                    onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                />
-                            </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Sale Price</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={formData.sale_price}
+                                onChange={(e) => setFormData({ ...formData, sale_price: parseFloat(e.target.value) || 0 })}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Original Price</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={formData.original_price}
+                                onChange={(e) => setFormData({ ...formData, original_price: parseFloat(e.target.value) || 0 })}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Cost Price</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={formData.cost_price}
+                                onChange={(e) => setFormData({ ...formData, cost_price: parseFloat(e.target.value) || 0 })}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Quantity (Stock)</label>
+                            <input
+                                type="number"
+                                value={formData.quantity}
+                                onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                            />
                         </div>
                     </div>
                 </div>

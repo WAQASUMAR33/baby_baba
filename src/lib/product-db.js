@@ -59,12 +59,13 @@ export async function upsertProduct(product) {
       product.image?.src || (product.images?.[0]?.src) || null,
       product.handle || null,
       productSalePrice,
+      0, // Default cost price to 0 on upsert (Shopify might not provide it)
       totalQuantity,
     ]
 
     await conn.execute(
-      `INSERT INTO Product (id, title, description, vendor, product_type, status, image, handle, sale_price, quantity, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      `INSERT INTO Product (id, title, description, vendor, product_type, status, image, handle, sale_price, cost_price, quantity, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
        ON DUPLICATE KEY UPDATE
        title = VALUES(title),
        description = VALUES(description),
@@ -163,9 +164,131 @@ export async function updateProductCategory(productId, categoryId) {
   }
 }
 
+/**
+ * Get a single product and its variants by ID
+ * @param {string} id 
+ */
+export async function getProductById(id) {
+  const connection = getPool()
+  try {
+    const [products] = await connection.execute(
+      'SELECT * FROM Product WHERE id = ? LIMIT 1',
+      [String(id)]
+    )
+
+    if (products.length === 0) return null
+
+    const product = products[0]
+
+    const [variants] = await connection.execute(
+      'SELECT * FROM ProductVariant WHERE productId = ?',
+      [String(id)]
+    )
+
+    product.variants = variants
+    return product
+  } catch (error) {
+    console.error(`❌ Error fetching product ${id}:`, error)
+    throw error
+  }
+}
+
+/**
+ * Delete a product and its variants from the local database
+ * @param {string} id 
+ */
+export async function deleteProduct(id) {
+  const connection = getPool()
+  const conn = await connection.getConnection()
+  try {
+    await conn.beginTransaction()
+
+    await conn.execute('DELETE FROM ProductVariant WHERE productId = ?', [String(id)])
+    await conn.execute('DELETE FROM Product WHERE id = ?', [String(id)])
+
+    await conn.commit()
+    return { success: true }
+  } catch (error) {
+    await conn.rollback()
+    console.error(`❌ Error deleting product ${id}:`, error)
+    throw error
+  } finally {
+    conn.release()
+  }
+}
+
+/**
+ * Update core product fields
+ * @param {string} id 
+ * @param {object} data 
+ */
+export async function updateProduct(id, data) {
+  const connection = getPool()
+  const conn = await connection.getConnection()
+  try {
+    await conn.beginTransaction()
+
+    // Update Product table
+    const updateFields = []
+    const params = []
+
+    if (data.title !== undefined) { updateFields.push('title = ?'); params.push(data.title) }
+    if (data.vendor !== undefined) { updateFields.push('vendor = ?'); params.push(data.vendor) }
+    if (data.status !== undefined) { updateFields.push('status = ?'); params.push(data.status) }
+    if (data.sale_price !== undefined) { updateFields.push('sale_price = ?'); params.push(data.sale_price) }
+    if (data.original_price !== undefined) { updateFields.push('original_price = ?'); params.push(data.original_price) }
+    if (data.cost_price !== undefined) { updateFields.push('cost_price = ?'); params.push(data.cost_price) }
+    if (data.quantity !== undefined) { updateFields.push('quantity = ?'); params.push(data.quantity) }
+    if (data.categoryId !== undefined) { updateFields.push('categoryId = ?'); params.push(data.categoryId) }
+
+    if (updateFields.length > 0) {
+      params.push(String(id))
+      await conn.execute(
+        `UPDATE Product SET ${updateFields.join(', ')}, updatedAt = NOW() WHERE id = ?`,
+        params
+      )
+    }
+
+    // Update main variant if barcode or prices are provided
+    if (data.barcode !== undefined || data.sale_price !== undefined || data.original_price !== undefined) {
+      // Find the first variant
+      const [variants] = await conn.execute('SELECT id FROM ProductVariant WHERE productId = ? LIMIT 1', [String(id)])
+      if (variants.length > 0) {
+        const variantId = variants[0].id
+        const vUpdateFields = []
+        const vParams = []
+
+        if (data.barcode !== undefined) { vUpdateFields.push('barcode = ?'); vParams.push(data.barcode) }
+        if (data.sale_price !== undefined) { vUpdateFields.push('price = ?'); vParams.push(data.sale_price) }
+        if (data.original_price !== undefined) { vUpdateFields.push('compare_at_price = ?'); vParams.push(data.original_price) }
+
+        if (vUpdateFields.length > 0) {
+          vParams.push(variantId)
+          await conn.execute(
+            `UPDATE ProductVariant SET ${vUpdateFields.join(', ')}, updatedAt = NOW() WHERE id = ?`,
+            vParams
+          )
+        }
+      }
+    }
+
+    await conn.commit()
+    return { success: true }
+  } catch (error) {
+    await conn.rollback()
+    console.error(`❌ Error updating product ${id}:`, error)
+    throw error
+  } finally {
+    conn.release()
+  }
+}
+
 export default {
   upsertProduct,
   clearProducts,
   getLocalProductCount,
   updateProductCategory,
+  getProductById,
+  deleteProduct,
+  updateProduct,
 }
