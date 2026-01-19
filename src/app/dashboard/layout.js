@@ -134,6 +134,15 @@ export default function DashboardLayout({ children }) {
       ),
     },
     {
+      name: "Users",
+      href: "/dashboard/users",
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+        </svg>
+      ),
+    },
+    {
       name: "Settings",
       href: "/dashboard/settings",
       icon: (
@@ -224,8 +233,8 @@ export default function DashboardLayout({ children }) {
                   key={item.name}
                   href={item.href}
                   className={`flex items-center ${desktopSidebarCollapsed ? 'justify-center' : ''} px-3 py-3 mb-1 text-sm font-medium rounded-lg transition-colors ${isActive
-                      ? "bg-gray-800 text-white"
-                      : "text-gray-300 hover:bg-gray-800 hover:text-white"
+                    ? "bg-gray-800 text-white"
+                    : "text-gray-300 hover:bg-gray-800 hover:text-white"
                     }`}
                   title={desktopSidebarCollapsed ? item.name : ''}
                 >

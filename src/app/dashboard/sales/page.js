@@ -119,7 +119,7 @@ export default function SalesPage() {
               font-family: 'Courier New', Courier, monospace;
               font-size: 10pt;
               line-height: 1.2;
-              color: #000;
+              color: #000 !important;
               background: #fff;
             }
             
@@ -161,9 +161,10 @@ export default function SalesPage() {
             
             .print-table {
               width: 100%;
-              font-size: 9pt;
+              font-size: 8pt;
               margin: 8px 0;
               border-collapse: collapse;
+              color: #000;
             }
             
             .print-table th {
@@ -175,9 +176,10 @@ export default function SalesPage() {
             }
             
             .print-table td {
-              padding: 3px 0;
-              border-bottom: 1px dotted #999;
-              font-size: 9pt;
+              padding: 4px 0;
+              border-bottom: 1px dotted #000;
+              font-size: 8pt;
+              color: #000;
             }
             
             .print-table .text-center {
@@ -223,8 +225,9 @@ export default function SalesPage() {
         <body>
           <!-- Header -->
           <div class="print-logo">
-            <h1>BABY BABA</h1>
-            <p>Point of Sale System</p>
+            <img src="/babybazar.png" alt="Baby Bazar Logo" style="height: 60px; margin-bottom: 8px;">
+            <h1 style="text-transform: uppercase;">Baby Bazar</h1>
+            <p>Quality Products for Your Little Ones</p>
           </div>
 
           <!-- Receipt Info -->
@@ -265,11 +268,12 @@ export default function SalesPage() {
           <table class="print-table">
             <thead>
               <tr>
-                <th>Item</th>
-                <th class="text-center">Qty</th>
-                <th class="text-right">Price</th>
-                <th class="text-right">Disc</th>
-                <th class="text-right">Total</th>
+                <th style="width: 35%">Item</th>
+                <th class="text-right" style="width: 13%">Rate</th>
+                <th class="text-right" style="width: 10%">Qty</th>
+                <th class="text-right" style="width: 15%">Total</th>
+                <th class="text-right" style="width: 12%">Dis</th>
+                <th class="text-right" style="width: 15%">Net</th>
               </tr>
             </thead>
             <tbody>
@@ -282,11 +286,12 @@ export default function SalesPage() {
                   <td>
                     <div style="font-weight: bold;">${item.title || 'N/A'}</div>
                   </td>
-                  <td class="text-center">${item.quantity || 0}</td>
-                  <td class="text-right">${formatCurrency(item.price || 0)}</td>
-                  <td class="text-right">${itemDiscount > 0 ? formatCurrency(itemDiscount) : '-'}</td>
+                  <td class="text-right">${parseFloat(item.price || 0).toFixed(0)}</td>
+                  <td class="text-right">${item.quantity || 0}</td>
+                  <td class="text-right">${(parseFloat(item.price || 0) * parseInt(item.quantity || 0)).toFixed(0)}</td>
+                  <td class="text-right">${itemDiscount > 0 ? itemDiscount.toFixed(0) : '-'}</td>
                   <td class="text-right" style="font-weight: bold;">
-                    ${formatCurrency(itemNetTotal)}
+                    ${itemNetTotal.toFixed(0)}
                   </td>
                 </tr>
               `}).join('') : `
@@ -354,7 +359,7 @@ export default function SalesPage() {
           <div class="print-footer">
             <p style="margin: 4px 0; font-weight: bold;">Thank you for your purchase!</p>
             <p style="margin: 4px 0;">Visit us again soon</p>
-            <p style="margin: 4px 0;">For queries: +92 XXX XXXXXXX</p>
+            <p style="margin: 4px 0;">For queries: 0313-783-0100</p>
             <p style="margin: 8px 0 0 0; font-size: 7pt;">Powered by Baby Baba POS</p>
           </div>
 
