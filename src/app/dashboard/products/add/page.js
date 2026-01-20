@@ -22,40 +22,40 @@ export default function AddProductPage() {
     // Basic Information
     title: "",
     description: "",
-    
+
     // Media
     images: [],
-    
+
     // Pricing
     price: "",
     compare_at_price: "",
     cost_per_item: "",
-    
+
     // Inventory
     sku: "",
     barcode: "",
     track_quantity: true,
     inventory_quantity: "0",
     continue_selling: false,
-    
+
     // Shipping
     weight: "",
     weight_unit: "kg",
     requires_shipping: true,
-    
+
     // Variants
     has_variants: false,
-    
+
     // Product Organization
     product_type: "",
     vendor: "",
     collections: [],
     tags: "",
-    
+
     // SEO
     seo_title: "",
     seo_description: "",
-    
+
     // Status
     status: "draft",
   })
@@ -90,9 +90,9 @@ export default function AddProductPage() {
 
   const handleImageUpload = (e) => {
     const files = Array.from(e.target.files || [])
-    
+
     console.log('📁 Files selected:', files.length)
-    
+
     if (files.length === 0) {
       console.log('⚠️ No files selected')
       return
@@ -152,15 +152,15 @@ export default function AddProductPage() {
   const handleDrop = (e) => {
     e.preventDefault()
     e.stopPropagation()
-    
+
     console.log('📂 Files dropped')
-    
+
     const files = Array.from(e.dataTransfer?.files || [])
     console.log(`📥 Dropped ${files.length} files`)
-    
+
     const imageFiles = files.filter(file => file.type.startsWith('image/'))
     console.log(`🖼️ ${imageFiles.length} image files`)
-    
+
     if (imageFiles.length > 0) {
       // Trigger the same handler as file input
       const event = {
@@ -181,7 +181,7 @@ export default function AddProductPage() {
 
   const addImageUrl = () => {
     if (!imageUrlInput.trim()) return
-    
+
     // Validate URL
     try {
       new URL(imageUrlInput)
@@ -198,13 +198,13 @@ export default function AddProductPage() {
 
   const uploadImagesToImgur = async (files) => {
     const uploadedImages = []
-    
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       try {
         setError(`Uploading image ${i + 1} of ${files.length} to Imgur...`)
         console.log(`📤 Uploading ${file.name}...`)
-        
+
         // Convert to base64
         const base64 = await new Promise((resolve, reject) => {
           const reader = new FileReader()
@@ -238,7 +238,7 @@ export default function AddProductPage() {
         }
 
         const data = await response.json()
-        
+
         if (data.success && data.data && data.data.link) {
           uploadedImages.push({
             src: data.data.link,
@@ -255,7 +255,7 @@ export default function AddProductPage() {
         // Continue with other images instead of stopping
       }
     }
-    
+
     return uploadedImages
   }
 
@@ -266,61 +266,31 @@ export default function AddProductPage() {
     setLoading(true)
 
     try {
-      // Collect all images (uploaded files + URLs)
-      let images = []
-      
-      // Upload files to Imgur ONLY when Save is clicked
-      if (imageFiles.length > 0) {
-        console.log('📤 Starting upload of', imageFiles.length, 'images to Imgur...')
-        setError(`Uploading ${imageFiles.length} image(s) to Imgur...`)
-        
-        try {
-          const uploadedImages = await uploadImagesToImgur(imageFiles)
-          images = [...images, ...uploadedImages]
-          console.log('✅ Successfully uploaded', uploadedImages.length, 'images')
-          
-          if (uploadedImages.length < imageFiles.length) {
-            const failedCount = imageFiles.length - uploadedImages.length
-            setError(`⚠️ ${failedCount} image(s) failed to upload. Continuing with ${uploadedImages.length} image(s)...`)
-            await new Promise(resolve => setTimeout(resolve, 2000)) // Show message for 2 seconds
-          }
-        } catch (uploadError) {
-          console.error('❌ Upload error:', uploadError)
-          setError('Image upload failed. Please try using "Add by URL" method instead.')
-          setLoading(false)
-          return
-        }
-        setError('Images uploaded successfully! Creating product...')
-      }
-      
-      // Add URL images
-      if (imageUrls.length > 0) {
-        console.log('📎 Adding', imageUrls.length, 'images from URLs')
-        images = [...images, ...imageUrls.map(url => ({ src: url, alt: formData.title }))]
-      }
-      
-      console.log('📦 Total images to add:', images.length)
-
-      // Prepare product data
-      const productDataWithImages = {
-        ...formData,
-        images: images,
-        collections: formData.collections || [],
+      // Prepare product data for local database
+      const productData = {
+        title: formData.title,
+        description: formData.description,
+        vendor: formData.vendor,
+        product_type: formData.product_type,
+        status: formData.status,
+        price: formData.price,
+        compare_at_price: formData.compare_at_price,
+        cost_per_item: formData.cost_per_item,
+        sku: formData.sku,
+        barcode: formData.barcode,
+        inventory_quantity: formData.inventory_quantity,
+        weight: formData.weight,
+        weight_unit: formData.weight_unit,
       }
 
-      console.log('📦 Submitting product data:', {
-        title: productDataWithImages.title,
-        images: productDataWithImages.images.length,
-        collections: productDataWithImages.collections.length,
-        price: productDataWithImages.price,
-      })
+      console.log('📦 Saving product to database:', productData)
 
-      const response = await fetch('/api/shopify/products/create', {
+      const response = await fetch('/api/products', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(productDataWithImages),
+        body: JSON.stringify(productData),
       })
 
       const data = await response.json()
@@ -330,17 +300,9 @@ export default function AddProductPage() {
       if (data.success) {
         setSuccess(true)
         setError(null)
-        
-        const successMessage = [
-          '✅ Product created successfully!',
-          '',
-          `📸 Images: ${images.length}`,
-          `📁 Collections: ${data.collectionsAdded || 0}`,
-          '',
-          'Redirecting to products page...'
-        ].join('\n')
-        
-        alert(successMessage)
+
+        alert('✅ Product created successfully in database!')
+
         // Reset form
         setFormData({
           title: "",
@@ -369,11 +331,11 @@ export default function AddProductPage() {
         setImagePreviews([])
         setImageUrls([])
         setImageUrlInput('')
-        
-        // Redirect to products page after 2 seconds
+
+        // Redirect to products page after 1 second
         setTimeout(() => {
           router.push('/dashboard/products')
-        }, 2000)
+        }, 1000)
       } else {
         setError(data.error || 'Failed to create product')
       }
@@ -392,7 +354,7 @@ export default function AddProductPage() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Add New Product</h1>
             <p className="mt-2 text-sm text-gray-600">
-              Create a new product in your Shopify store
+              Create a new product in your database
             </p>
           </div>
           <Link
@@ -441,7 +403,7 @@ export default function AddProductPage() {
       <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content - Left Side */}
         <div className="lg:col-span-2 space-y-6">
-          
+
           {/* Title and Description */}
           <div className="bg-white shadow rounded-lg p-6">
             <div className="space-y-4">
@@ -481,28 +443,26 @@ export default function AddProductPage() {
           {/* Media */}
           <div className="bg-white shadow rounded-lg p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-4">Media</h3>
-            
+
             {/* Upload Method Tabs */}
             <div className="flex space-x-2 mb-4">
               <button
                 type="button"
                 onClick={() => setUploadMethod('file')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  uploadMethod === 'file'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${uploadMethod === 'file'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
               >
                 📤 Upload Files
               </button>
               <button
                 type="button"
                 onClick={() => setUploadMethod('url')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  uploadMethod === 'url'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${uploadMethod === 'url'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
               >
                 🔗 Add by URL
               </button>
@@ -557,12 +517,12 @@ export default function AddProductPage() {
                         </svg>
                         Choose Files
                       </span>
-                      <input 
-                        id="file-upload" 
-                        name="file-upload" 
-                        type="file" 
-                        className="sr-only" 
-                        multiple 
+                      <input
+                        id="file-upload"
+                        name="file-upload"
+                        type="file"
+                        className="sr-only"
+                        multiple
                         accept="image/*,image/png,image/jpeg,image/jpg,image/gif"
                         onChange={handleImageUpload}
                         onClick={(e) => {
@@ -880,7 +840,7 @@ export default function AddProductPage() {
 
         {/* Sidebar - Right Side */}
         <div className="lg:col-span-1 space-y-6">
-          
+
           {/* Product Status */}
           <div className="bg-white shadow rounded-lg p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-4">Product status</h3>

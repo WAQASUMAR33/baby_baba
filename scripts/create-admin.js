@@ -1,60 +1,64 @@
-// Script to create admin account
-// Run with: node scripts/create-admin.js
-
 const bcrypt = require('bcryptjs')
+const mysql = require('mysql2/promise')
 
-async function createAdmin() {
+// Parse DATABASE_URL
+const parseDatabaseUrl = (url) => {
+    if (!url) throw new Error('DATABASE_URL not defined')
+    const match = url.match(/mysql:\/\/([^:]+)(?::([^@]*))?@([^:]+):(\d+)\/(.+)/)
+    if (!match) throw new Error('Invalid DATABASE_URL format')
+    return {
+        host: match[3],
+        port: parseInt(match[4]),
+        user: match[1],
+        password: match[2] || '',
+        database: match[5],
+    }
+}
+
+async function createAdminUser() {
     try {
-        // Import Prisma client
-        const { PrismaClient } = require('@prisma/client')
-        const prisma = new PrismaClient()
+        // Load environment variables
+        require('dotenv').config()
 
-        const email = 'theitxprts@gmail.com'
-        const password = '786ninja'
-        const name = 'Admin'
+        const dbUrl = process.env.DATABASE_URL
+        const config = parseDatabaseUrl(dbUrl)
 
-        console.log('🔍 Checking if user already exists...')
+        console.log('📡 Connecting to database...')
+        const connection = await mysql.createConnection(config)
 
-        // Check if user already exists
-        const existingUser = await prisma.user.findUnique({
-            where: { email }
-        })
+        // Check if admin already exists
+        const [existingUsers] = await connection.execute(
+            'SELECT * FROM User WHERE email = ?',
+            ['admin@gmail.com']
+        )
 
-        if (existingUser) {
-            console.log('⚠️  User already exists with this email!')
-            console.log('User ID:', existingUser.id)
-            console.log('Email:', existingUser.email)
-            console.log('Name:', existingUser.name)
-            await prisma.$disconnect()
+        if (existingUsers.length > 0) {
+            console.log('⚠️  Admin user already exists!')
+            await connection.end()
             return
         }
 
+        // Hash password
         console.log('🔐 Hashing password...')
-        const hashedPassword = await bcrypt.hash(password, 10)
+        const hashedPassword = await bcrypt.hash('786ninja', 10)
 
+        // Create admin user
         console.log('👤 Creating admin user...')
-        const user = await prisma.user.create({
-            data: {
-                email,
-                password: hashedPassword,
-                name,
-            }
-        })
+        await connection.execute(
+            'INSERT INTO User (email, password, name, role, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
+            ['admin@gmail.com', hashedPassword, 'Admin', 'admin', 'active']
+        )
 
-        console.log('✅ Admin account created successfully!')
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-        console.log('User ID:', user.id)
-        console.log('Email:', user.email)
-        console.log('Name:', user.name)
-        console.log('Password:', password)
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-        console.log('You can now login with these credentials!')
+        console.log('✅ Admin user created successfully!')
+        console.log('📧 Email: admin@gmail.com')
+        console.log('🔑 Password: 786ninja')
+        console.log('👑 Role: admin')
 
-        await prisma.$disconnect()
+        await connection.end()
     } catch (error) {
-        console.error('❌ Error creating admin account:', error)
+        console.error('❌ Error creating admin user:', error)
         process.exit(1)
     }
 }
 
-createAdmin()
+createAdminUser()

@@ -47,7 +47,7 @@ export async function findUserByEmail(email) {
   try {
     const connectionPool = getPool()
     const [users] = await connectionPool.execute(
-      'SELECT id, email, password, name, createdAt, updatedAt FROM User WHERE email = ? LIMIT 1',
+      'SELECT id, email, password, name, role, createdAt, updatedAt FROM User WHERE email = ? LIMIT 1',
       [email.trim().toLowerCase()]
     )
     return users.length > 0 ? users[0] : null

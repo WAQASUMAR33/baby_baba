@@ -1,6 +1,4 @@
-import { NextResponse } from 'next/server'
 import { createProduct } from '@/lib/shopify'
-import { createProductListing } from '@/lib/shopify-listings'
 
 /**
  * POST /api/shopify/products/create
@@ -9,7 +7,7 @@ import { createProductListing } from '@/lib/shopify-listings'
 export async function POST(request) {
   try {
     const body = await request.json()
-    
+
     // Validate required fields
     if (!body.title) {
       return NextResponse.json(
@@ -109,10 +107,9 @@ export async function POST(request) {
       }
     }
 
-    // Note: Product Listing API auto-publishing is disabled by default
-    // Products are created in your Shopify admin and will be available
+    // Note: Products are created in your Shopify admin and will be available
     // based on your sales channel settings
-    
+
     return NextResponse.json({
       success: true,
       product,
@@ -122,7 +119,7 @@ export async function POST(request) {
     })
   } catch (error) {
     console.error('Error creating product:', error)
-    
+
     return NextResponse.json(
       {
         success: false,

@@ -11,17 +11,36 @@ export default function SalesPage() {
   const [activeTab, setActiveTab] = useState('pos') // 'promotions' or 'pos'
   const [selectedSale, setSelectedSale] = useState(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [stats, setStats] = useState({ totalSales: 0, totalRevenue: 0, totalDiscount: 0 })
+  const [stats, setStats] = useState({ totalSales: 0, totalRevenue: 0, totalDiscount: 0, totalCommission: 0 })
 
   // Date filters
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [employeeId, setEmployeeId] = useState('')
+  const [employees, setEmployees] = useState([])
+  const [loadingEmployees, setLoadingEmployees] = useState(false)
 
   useEffect(() => {
     fetchSales()
     fetchPosSales()
+    fetchEmployees()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const fetchEmployees = async () => {
+    try {
+      setLoadingEmployees(true)
+      const response = await fetch('/api/employees')
+      const data = await response.json()
+      if (data.success) {
+        setEmployees(data.employees || [])
+      }
+    } catch (error) {
+      console.error('Error fetching employees:', error)
+    } finally {
+      setLoadingEmployees(false)
+    }
+  }
 
   const fetchSales = async () => {
     try {
@@ -43,13 +62,14 @@ export default function SalesPage() {
       const params = new URLSearchParams()
       if (startDate) params.append('startDate', startDate)
       if (endDate) params.append('endDate', endDate)
+      if (employeeId) params.append('employeeId', employeeId)
 
       const response = await fetch(`/api/sales?${params}`)
       const data = await response.json()
 
       if (data.success) {
         setPosSales(data.sales || [])
-        setStats(data.stats || { totalSales: 0, totalRevenue: 0, totalDiscount: 0 })
+        setStats(data.stats || { totalSales: 0, totalRevenue: 0, totalDiscount: 0, totalCommission: 0 })
       }
     } catch (error) {
       console.error('Error fetching POS sales:', error)
@@ -65,6 +85,7 @@ export default function SalesPage() {
   const clearDateFilter = () => {
     setStartDate('')
     setEndDate('')
+    setEmployeeId('')
     // Fetch all sales after clearing
     setTimeout(() => fetchPosSales(), 100)
   }
@@ -227,7 +248,8 @@ export default function SalesPage() {
           <div class="print-logo">
             <img src="/babybazar.png" alt="Baby Bazar Logo" style="height: 60px; margin-bottom: 8px;">
             <h1 style="text-transform: uppercase;">Baby Bazar</h1>
-            <p>Quality Products for Your Little Ones</p>
+            <p>Post Office Road Mandi Bahauddin</p>
+            <p>Ph : 0347-943-2880</p>
           </div>
 
           <!-- Receipt Info -->
@@ -358,8 +380,7 @@ export default function SalesPage() {
           <!-- Footer -->
           <div class="print-footer">
             <p style="margin: 4px 0; font-weight: bold;">Thank you for your purchase!</p>
-            <p style="margin: 4px 0;">Visit us again soon</p>
-            <p style="margin: 4px 0;">For queries: 0313-783-0100</p>
+            <p style="margin: 4px 0;">we look forward to seeing you soon</p>
             <p style="margin: 8px 0 0 0; font-size: 7pt;">Powered by Baby Baba POS</p>
           </div>
 
@@ -502,6 +523,24 @@ export default function SalesPage() {
                 />
               </div>
 
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Employee
+                </label>
+                <select
+                  value={employeeId}
+                  onChange={(e) => setEmployeeId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">All Employees</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="flex space-x-2">
                 <button
                   onClick={handleDateFilter}
@@ -539,7 +578,7 @@ export default function SalesPage() {
           </div>
 
           {/* Sales Statistics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
               <div className="flex items-center justify-between">
                 <div>
@@ -584,6 +623,23 @@ export default function SalesPage() {
                 <div className="bg-yellow-400 bg-opacity-30 rounded-full p-3">
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-purple-100 text-sm font-medium">Total Commission</p>
+                  <p className="text-3xl font-bold mt-2">
+                    {formatCurrency(stats.totalCommission || 0)}
+                  </p>
+                  <p className="text-purple-100 text-xs mt-1">Earnings for selected period</p>
+                </div>
+                <div className="bg-purple-400 bg-opacity-30 rounded-full p-3">
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
               </div>

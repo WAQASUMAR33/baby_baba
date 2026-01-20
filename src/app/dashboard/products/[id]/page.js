@@ -154,6 +154,46 @@ export default function ProductDetailPage({ params }) {
                     <p className="text-sm text-gray-500 mt-1">ID: {id}</p>
                 </div>
                 <div className="flex space-x-3">
+                    {!product.isInDatabase && (
+                        <button
+                            onClick={async () => {
+                                try {
+                                    setSaving(true)
+                                    const res = await fetch('/api/products', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            id: product.id,
+                                            title: product.title,
+                                            vendor: product.vendor,
+                                            status: 'active',
+                                            sale_price: product.variants?.[0]?.price || 0,
+                                            original_price: product.variants?.[0]?.compare_at_price || 0,
+                                            cost_price: 0,
+                                            quantity: product.variants?.[0]?.inventory_quantity || 0,
+                                            image: product.image?.src || product.images?.[0]?.src || null,
+                                            handle: product.handle
+                                        })
+                                    })
+                                    const data = await res.json()
+                                    if (data.success) {
+                                        setSuccess('Product saved to database!')
+                                        fetchProduct() // Refresh to show it's now in database
+                                    } else {
+                                        setError(data.error || 'Failed to save product')
+                                    }
+                                } catch (err) {
+                                    setError('Failed to save product to database')
+                                } finally {
+                                    setSaving(false)
+                                }
+                            }}
+                            disabled={saving}
+                            className="px-4 py-2 border border-green-300 text-green-700 rounded-lg hover:bg-green-50 font-medium transition-colors disabled:opacity-50"
+                        >
+                            {saving ? 'Saving...' : '💾 Save to Database'}
+                        </button>
+                    )}
                     <button
                         onClick={handleDelete}
                         disabled={deleting}

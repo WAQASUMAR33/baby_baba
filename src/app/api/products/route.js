@@ -130,3 +130,71 @@ export async function GET(request) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }
+
+export async function POST(request) {
+    try {
+        const body = await request.json();
+        const pool = getPool();
+
+        // Validate required fields
+        if (!body.title) {
+            return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 });
+        }
+
+        // Generate a unique ID if not provided (for non-Shopify products)
+        const productId = body.id || `local-${Date.now()}`;
+
+        // Insert product
+        await pool.execute(
+            `INSERT INTO Product (id, title, description, vendor, product_type, status, image, handle, 
+             sale_price, original_price, cost_price, quantity, categoryId, createdAt, updatedAt) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+            [
+                productId,
+                body.title,
+                body.description || null,
+                body.vendor || null,
+                body.product_type || null,
+                body.status || 'active',
+                body.image || null,
+                body.handle || body.title.toLowerCase().replace(/\s+/g, '-'),
+                parseFloat(body.sale_price || body.price || 0),
+                parseFloat(body.original_price || body.compare_at_price || 0),
+                parseFloat(body.cost_price || body.cost_per_item || 0),
+                parseInt(body.quantity || body.inventory_quantity || 0),
+                body.categoryId ? parseInt(body.categoryId) : null
+            ]
+        );
+
+        // Insert variant (every product needs at least one variant)
+        const variantId = body.variant_id || `${productId}-variant-1`;
+        await pool.execute(
+            `INSERT INTO ProductVariant (id, productId, title, price, compare_at_price, sku, barcode, 
+             inventory_quantity, weight, weight_unit, createdAt, updatedAt) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+            [
+                variantId,
+                productId,
+                body.variant_title || 'Default',
+                parseFloat(body.sale_price || body.price || 0),
+                parseFloat(body.original_price || body.compare_at_price || 0),
+                body.sku || null,
+                body.barcode || null,
+                parseInt(body.quantity || body.inventory_quantity || 0),
+                parseFloat(body.weight || 0),
+                body.weight_unit || 'kg'
+            ]
+        );
+
+        return NextResponse.json({
+            success: true,
+            product: {
+                id: productId,
+                title: body.title
+            }
+        }, { status: 201 });
+    } catch (error) {
+        console.error('❌ Error creating product:', error);
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+}

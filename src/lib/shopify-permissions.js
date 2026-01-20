@@ -16,7 +16,7 @@ const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2024-01'
 async function testPermission(endpoint) {
   try {
     const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}${endpoint}`
-    
+
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -62,17 +62,11 @@ async function testPermission(endpoint) {
   }
 }
 
-/**
- * Check all required permissions
- * @returns {Promise<object>} - Permission status for all features
- */
 export async function checkAllPermissions() {
   const permissions = {
     read_products: await testPermission('/products.json?limit=1'),
     write_products: await testPermission('/products.json'), // Will fail on POST if no permission
     read_collections: await testPermission('/custom_collections.json?limit=1'),
-    read_product_listings: await testPermission('/product_listings.json?limit=1'),
-    write_product_listings: await testPermission('/product_listings.json'),
   }
 
   const summary = {
@@ -99,8 +93,6 @@ export async function hasPermission(permission) {
     read_products: '/products.json?limit=1',
     write_products: '/products.json',
     read_collections: '/custom_collections.json?limit=1',
-    read_product_listings: '/product_listings.json?limit=1',
-    write_product_listings: '/product_listings.json',
   }
 
   const endpoint = endpoints[permission]
@@ -121,8 +113,6 @@ export function getPermissionRequirements() {
     'View Products': ['read_products'],
     'Create/Edit Products': ['read_products', 'write_products'],
     'View Categories': ['read_collections'],
-    'View Product Listings': ['read_product_listings'],
-    'Publish Products': ['read_product_listings', 'write_product_listings'],
   }
 }
 
@@ -147,8 +137,6 @@ export function getPermissionInstructions() {
       { name: 'read_products', description: 'View products' },
       { name: 'write_products', description: 'Create and edit products' },
       { name: 'read_collections', description: 'View collections/categories' },
-      { name: 'read_product_listings', description: 'View published product listings' },
-      { name: 'write_product_listings', description: 'Publish products to sales channels' },
     ],
   }
 }

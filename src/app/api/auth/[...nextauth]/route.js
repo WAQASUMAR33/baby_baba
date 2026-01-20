@@ -6,7 +6,7 @@ import { findUserByEmail } from "@/lib/db"
 // Get secret from environment or use fallback
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || 'vAyWrNiJupbyfq7fGtNJsSRM3SwzHcKsu435xHL6yWA='
 // For Vercel, use VERCEL_URL if NEXTAUTH_URL is not set
-const NEXTAUTH_URL = process.env.NEXTAUTH_URL || 
+const NEXTAUTH_URL = process.env.NEXTAUTH_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
 
 // Validate secret is set
@@ -64,6 +64,7 @@ export const authOptions = {
             id: user.id.toString(),
             email: user.email,
             name: user.name || user.email,
+            role: user.role || 'user',
           }
         } catch (error) {
           console.error("Login error:", error)
@@ -86,6 +87,7 @@ export const authOptions = {
         token.id = user.id
         token.email = user.email
         token.name = user.name
+        token.role = user.role
       }
       return token
     },
@@ -94,6 +96,7 @@ export const authOptions = {
         session.user.id = token.id
         session.user.email = token.email
         session.user.name = token.name
+        session.user.role = token.role
       }
       return session
     },

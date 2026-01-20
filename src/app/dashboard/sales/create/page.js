@@ -218,7 +218,7 @@ export default function EnhancedPOSPage() {
   // Calculate totals
   const subtotal = billItems.reduce((sum, item) => sum + item.netTotal, 0)
   const totalItemDiscounts = billItems.reduce((sum, item) => sum + item.discount, 0)
-  const globalDiscountAmount = (subtotal * globalDiscount) / 100
+  const globalDiscountAmount = parseFloat(globalDiscount) || 0
   const grandTotal = subtotal - globalDiscountAmount
   const change = amountReceived ? parseFloat(amountReceived) - grandTotal : 0
 
@@ -367,7 +367,8 @@ export default function EnhancedPOSPage() {
           <div class="print-logo">
             <img src="/babybazar.png" alt="Baby Bazar Logo" style="height: 60px; margin-bottom: 8px;">
             <h1 style="text-transform: uppercase;">Baby Bazar</h1>
-            <p>Quality Products for Your Little Ones</p>
+            <p>Post Office Road Mandi Bahauddin</p>
+            <p>Ph : 0347-943-2880</p>
           </div>
 
           <!-- Receipt Info -->
@@ -502,8 +503,7 @@ export default function EnhancedPOSPage() {
           <!-- Footer -->
           <div class="print-footer">
             <p style="margin: 4px 0; font-weight: bold;">Thank you for your purchase!</p>
-            <p style="margin: 4px 0;">Visit us again soon</p>
-            <p style="margin: 4px 0;">For queries: 0313-783-0100</p>
+            <p style="margin: 4px 0;">we look forward to seeing you soon</p>
             <p style="margin: 8px 0 0 0; font-size: 7pt;">Powered by Baby Baba POS</p>
           </div>
 
@@ -884,15 +884,15 @@ export default function EnhancedPOSPage() {
 
             {/* Global Discount */}
             <div className="flex justify-between items-center text-sm pt-2 border-t border-gray-200">
-              <span className="text-gray-600">Global Discount (%):</span>
+              <span className="text-gray-600">Global Discount (Rs):</span>
               <input
                 type="number"
                 value={globalDiscount}
                 onChange={(e) => setGlobalDiscount(parseFloat(e.target.value) || 0)}
-                className="w-20 px-2 py-1 text-right border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                step="0.1"
+                className="w-24 px-2 py-1 text-right border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
+                step="0.01"
                 min="0"
-                max="100"
+                max={subtotal}
               />
             </div>
             {globalDiscountAmount > 0 && (

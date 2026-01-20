@@ -173,6 +173,12 @@ export async function getSales(filters = {}) {
       params.push(filters.status)
     }
 
+    // Employee filter
+    if (filters.employeeId) {
+      conditions.push('s.employeeId = ?')
+      params.push(filters.employeeId)
+    }
+
     // Date range filter
     if (filters.startDate) {
       conditions.push('DATE(s.createdAt) >= ?')
@@ -218,6 +224,11 @@ export async function getSales(filters = {}) {
       countParams.push(filters.status)
     }
 
+    if (filters.employeeId) {
+      countConditions.push('employeeId = ?')
+      countParams.push(filters.employeeId)
+    }
+
     if (filters.startDate) {
       countConditions.push('DATE(createdAt) >= ?')
       countParams.push(filters.startDate)
@@ -235,16 +246,22 @@ export async function getSales(filters = {}) {
     const [countResult] = await connection.execute(countQuery, countParams)
     const total = countResult[0].count
 
-    // Get stats with same date filters
+    // Get stats with same date and employee filters
     let statsQuery = `
       SELECT 
         COUNT(*) as totalSales,
         SUM(total) as totalRevenue,
-        SUM(discount) as totalDiscount
+        SUM(discount) as totalDiscount,
+        SUM(commission) as totalCommission
        FROM Sale
        WHERE status = 'completed'
     `
     const statsParams = []
+
+    if (filters.employeeId) {
+      statsQuery += ' AND employeeId = ?'
+      statsParams.push(filters.employeeId)
+    }
 
     if (filters.startDate) {
       statsQuery += ' AND DATE(createdAt) >= ?'

@@ -237,6 +237,7 @@ export async function GET(request) {
       status: searchParams.get('status'),
       startDate: searchParams.get('startDate'),
       endDate: searchParams.get('endDate'),
+      employeeId: searchParams.get('employeeId'),
     }
 
     // Fetch sales using direct SQL
@@ -252,6 +253,7 @@ export async function GET(request) {
         totalSales: parseInt(stats.totalSales) || 0,
         totalRevenue: parseFloat(stats.totalRevenue) || 0,
         totalDiscount: parseFloat(stats.totalDiscount) || 0,
+        totalCommission: parseFloat(stats.totalCommission) || 0,
       }
     })
   } catch (error) {
