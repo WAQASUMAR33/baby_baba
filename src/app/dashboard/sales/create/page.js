@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useSession } from "next-auth/react"
+import { toast } from "react-hot-toast"
 
 export default function EnhancedPOSPage() {
   const { data: session } = useSession()
@@ -77,7 +78,7 @@ export default function EnhancedPOSPage() {
   // Add product to bill
   const addProductToBill = () => {
     if (!selectedProduct) {
-      alert('Please select a product first')
+      toast.error('Please select a product first')
       return
     }
 
@@ -541,7 +542,7 @@ export default function EnhancedPOSPage() {
     }
 
     if (paymentMethod === 'cash' && (!amountReceived || parseFloat(amountReceived) < grandTotal)) {
-      alert('Amount received must be equal to or greater than total')
+      toast.error('Amount received must be equal to or greater than total')
       return
     }
 
@@ -588,8 +589,6 @@ export default function EnhancedPOSPage() {
       // Print receipt automatically
       printReceipt(data.sale)
 
-      alert(`✅ Sale completed!\\n\\nSale #${data.sale.id}\\nTotal: ${formatCurrency(grandTotal)}\\nEmployee: ${selectedEmployee.name}\\nCommission recorded and receipt sent to printer.`)
-
       // Reset form
       setBillItems([])
       setAmountReceived("")
@@ -597,17 +596,138 @@ export default function EnhancedPOSPage() {
       setGlobalDiscount(0)
       setSelectedEmployee(null)
       setLastSale(data.sale)
+      toast.success(`Sale completed! Total: ${formatCurrency(grandTotal)}`)
 
     } catch (error) {
       console.error('❌ Error completing sale:', error)
-      alert(`❌ Failed to complete sale: ${error.message}`)
+      toast.error(`Failed to complete sale: ${error.message}`)
     } finally {
       setProcessingPayment(false)
     }
   }
 
+  // --- Hold Sale Feature ---
+  const [heldSales, setHeldSales] = useState([])
+  const [showRecallModal, setShowRecallModal] = useState(false)
+
+  useEffect(() => {
+    // Load held sales from local storage on mount
+    const saved = localStorage.getItem('pos_held_sales')
+    if (saved) {
+      try {
+        setHeldSales(JSON.parse(saved))
+      } catch (e) {
+        console.error("Failed to parse held sales", e)
+      }
+    }
+  }, [])
+
+  const holdSale = () => {
+    if (billItems.length === 0) {
+      alert("Cart is empty!")
+      return
+    }
+
+    const saleToHold = {
+      id: Date.now(), // simple unique ID
+      timestamp: new Date().toISOString(),
+      items: billItems,
+      customerName,
+      employee: selectedEmployee,
+      paymentMethod,
+      amountReceived,
+      globalDiscount
+    }
+
+    const updatedHeldSales = [saleToHold, ...heldSales]
+    setHeldSales(updatedHeldSales)
+    localStorage.setItem('pos_held_sales', JSON.stringify(updatedHeldSales))
+
+    // Clear current sale
+    setBillItems([])
+    setCustomerName("")
+    setGlobalDiscount(0)
+    setAmountReceived("")
+    setSelectedEmployee(null)
+    setPaymentMethod("cash")
+
+
+    alert("Sale put on hold! You can recall it from the 'Recall Held' button.") // Kept for now, effectively harmless if we add toast
+    toast.success("Sale put on hold successfully!")
+  }
+
+  const recallSale = (sale) => {
+    if (billItems.length > 0) {
+      if (!confirm("Current cart will be cleared. Continue?")) return
+    }
+
+    // Restore state
+    setBillItems(sale.items)
+    setCustomerName(sale.customerName || "")
+    setSelectedEmployee(sale.employee || null)
+    setPaymentMethod(sale.paymentMethod || "cash")
+    setAmountReceived(sale.amountReceived || "")
+    setGlobalDiscount(sale.globalDiscount || 0)
+
+    // Remove from held list
+    deleteHeldSale(sale.id)
+    setShowRecallModal(false)
+  }
+
+  const deleteHeldSale = (id) => {
+    const updated = heldSales.filter(s => s.id !== id)
+    setHeldSales(updated)
+    localStorage.setItem('pos_held_sales', JSON.stringify(updated))
+  }
+
   return (
     <div className="h-screen flex flex-col bg-gray-50">
+      {/* Recall Modal */}
+      {showRecallModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="text-xl font-bold">Held Sales</h2>
+              <button onClick={() => setShowRecallModal(false)} className="text-gray-500 hover:text-gray-700">✕</button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              {heldSales.length === 0 ? (
+                <p className="text-center text-gray-500">No held sales found.</p>
+              ) : (
+                <div className="space-y-3">
+                  {heldSales.map(sale => (
+                    <div key={sale.id} className="border rounded p-3 flex justify-between items-center bg-gray-50 hover:bg-gray-100">
+                      <div>
+                        <p className="font-bold">{new Date(sale.timestamp).toLocaleString()} - {sale.items.length} Items</p>
+                        <p className="text-sm text-gray-600">Cust: {sale.customerName || 'N/A'} | Emp: {sale.employee?.name || 'N/A'}</p>
+                        <p className="text-sm font-semibold">Total: {formatCurrency(sale.items.reduce((acc, i) => acc + i.netTotal, 0))}</p>
+                      </div>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => recallSale(sale)}
+                          className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                        >
+                          Restore
+                        </button>
+                        <button
+                          onClick={() => deleteHeldSale(sale.id)}
+                          className="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t text-right">
+              <button onClick={() => setShowRecallModal(false)} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Side - Product Selection */}
@@ -908,118 +1028,143 @@ export default function EnhancedPOSPage() {
             </div>
           </div>
 
-          {/* Payment Method */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Payment Method
-            </label>
-            <div className="grid grid-cols-2 gap-2">
+          {/* Payment Section - Includes Hold/Recall and Methods */}
+          <div className="p-4 bg-gray-50 border-t border-gray-200">
+            {/* Hold & Recall Buttons */}
+            <div className="flex gap-2 mb-4">
               <button
-                onClick={() => setPaymentMethod('cash')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${paymentMethod === 'cash'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                  }`}
+                onClick={holdSale}
+                className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white py-2 rounded font-semibold transition-colors flex items-center justify-center gap-2"
               >
-                Cash
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                Hold Sale
               </button>
               <button
-                onClick={() => setPaymentMethod('card')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${paymentMethod === 'card'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                  }`}
+                onClick={() => setShowRecallModal(true)}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded font-semibold transition-colors flex items-center justify-center gap-2 relative"
               >
-                Card
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                Recall Held
+                {heldSales.length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">
+                    {heldSales.length}
+                  </span>
+                )}
               </button>
             </div>
-          </div>
 
-          {/* Amount Received (for cash) */}
-          {paymentMethod === 'cash' && (
-            <div className="mb-4">
+            <div className="flex justify-between items-center text-lg font-bold mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Amount Received
+                Payment Method
               </label>
-              <input
-                type="number"
-                value={amountReceived}
-                onChange={(e) => setAmountReceived(e.target.value)}
-                placeholder="0.00"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-lg font-semibold"
-                step="0.01"
-                min="0"
-              />
-              {amountReceived && change >= 0 && (
-                <p className="mt-2 text-sm">
-                  <span className="text-gray-600">Change: </span>
-                  <span className="font-bold text-green-600">{change.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
-                </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setPaymentMethod('cash')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${paymentMethod === 'cash'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                >
+                  Cash
+                </button>
+                <button
+                  onClick={() => setPaymentMethod('card')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${paymentMethod === 'card'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                >
+                  Card
+                </button>
+              </div>
+            </div>
+
+            {/* Amount Received (for cash) */}
+            {paymentMethod === 'cash' && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Amount Received
+                </label>
+                <input
+                  type="number"
+                  value={amountReceived}
+                  onChange={(e) => setAmountReceived(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-lg font-semibold"
+                  step="0.01"
+                  min="0"
+                />
+                {amountReceived && change >= 0 && (
+                  <p className="mt-2 text-sm">
+                    <span className="text-gray-600">Change: </span>
+                    <span className="font-bold text-green-600">{change.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                  </p>
+                )}
+                {amountReceived && change < 0 && (
+                  <p className="mt-2 text-sm text-red-600">
+                    ⚠️ Amount received is less than total
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Complete Sale Button */}
+            <button
+              onClick={completeSale}
+              disabled={processingPayment || billItems.length === 0 || !selectedEmployee}
+              className={`w-full py-4 rounded-lg font-bold text-lg transition-colors ${processingPayment || billItems.length === 0 || !selectedEmployee
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-green-600 text-white hover:bg-green-700'
+                }`}
+            >
+              {processingPayment ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Processing...
+                </span>
+              ) : (
+                `Complete Sale - ${grandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}`
               )}
-              {amountReceived && change < 0 && (
-                <p className="mt-2 text-sm text-red-600">
-                  ⚠️ Amount received is less than total
-                </p>
+            </button>
+
+            {/* Quick Actions */}
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  if (confirm('Clear all items from bill?')) {
+                    setBillItems([])
+                    setGlobalDiscount(0)
+                  }
+                }}
+                className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 font-medium"
+              >
+                Clear Bill
+              </button>
+              <button
+                onClick={() => {
+                  setCustomerName("")
+                  setAmountReceived("")
+                  setSelectedEmployee(null)
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+              >
+                Reset Details
+              </button>
+              {lastSale && (
+                <button
+                  onClick={() => printReceipt(lastSale)}
+                  className="col-span-2 px-4 py-3 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 font-bold flex items-center justify-center"
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  Print Last Receipt (#{lastSale.id})
+                </button>
               )}
             </div>
-          )}
-
-          {/* Complete Sale Button */}
-          <button
-            onClick={completeSale}
-            disabled={processingPayment || billItems.length === 0 || !selectedEmployee}
-            className={`w-full py-4 rounded-lg font-bold text-lg transition-colors ${processingPayment || billItems.length === 0 || !selectedEmployee
-              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              : 'bg-green-600 text-white hover:bg-green-700'
-              }`}
-          >
-            {processingPayment ? (
-              <span className="flex items-center justify-center">
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Processing...
-              </span>
-            ) : (
-              `Complete Sale - ${grandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}`
-            )}
-          </button>
-
-          {/* Quick Actions */}
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <button
-              onClick={() => {
-                if (confirm('Clear all items from bill?')) {
-                  setBillItems([])
-                  setGlobalDiscount(0)
-                }
-              }}
-              className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 font-medium"
-            >
-              Clear Bill
-            </button>
-            <button
-              onClick={() => {
-                setCustomerName("")
-                setAmountReceived("")
-                setSelectedEmployee(null)
-              }}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
-            >
-              Reset Details
-            </button>
-            {lastSale && (
-              <button
-                onClick={() => printReceipt(lastSale)}
-                className="col-span-2 px-4 py-3 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 font-bold flex items-center justify-center"
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                </svg>
-                Print Last Receipt (#{lastSale.id})
-              </button>
-            )}
           </div>
         </div>
       </div>

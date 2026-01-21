@@ -186,3 +186,17 @@ model Customer {
 
   @@map("Customer")
 }
+
+model DayEnd {
+  id             Int      @id @default(autoincrement())
+  date           DateTime @unique @db.Date
+  openingBalance Decimal  @default(0) @map("opening_balance") @db.Decimal(10, 2)
+  totalExpenses  Decimal  @default(0) @map("total_expenses") @db.Decimal(10, 2)
+  totalSales     Decimal  @default(0) @map("total_sales") @db.Decimal(10, 2)
+  dailyCash      Decimal  @default(0) @map("daily_cash") @db.Decimal(10, 2)
+  closingBalance Decimal  @default(0) @map("closing_balance") @db.Decimal(10, 2)
+  createdAt      DateTime @default(now()) @map("createdAt")
+  updatedAt      DateTime @updatedAt @map("updatedAt")
+
+  @@map("DayEnd")
+}
