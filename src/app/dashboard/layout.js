@@ -182,7 +182,7 @@ export default function DashboardLayout({ children }) {
           }`}
       >
         <div className="flex items-center justify-between h-16 px-6 bg-gray-800">
-          <h1 className="text-xl font-bold text-white">Baby Baba</h1>
+          <h1 className="text-xl font-bold text-white">Baby Bazar</h1>
           <button
             onClick={() => setSidebarOpen(false)}
             className="text-gray-400 hover:text-white"
@@ -221,7 +221,7 @@ export default function DashboardLayout({ children }) {
         <div className="flex flex-col flex-grow bg-gray-900 overflow-y-auto">
           <div className="flex items-center justify-between h-16 px-6 bg-gray-800">
             {!desktopSidebarCollapsed && (
-              <h1 className="text-xl font-bold text-white">Baby Baba</h1>
+              <h1 className="text-xl font-bold text-white">Baby Bazar</h1>
             )}
             <button
               onClick={() => setDesktopSidebarCollapsed(!desktopSidebarCollapsed)}

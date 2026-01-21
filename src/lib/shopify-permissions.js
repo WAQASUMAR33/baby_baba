@@ -126,7 +126,7 @@ export function getPermissionInstructions() {
     steps: [
       'Go to Shopify Admin → Settings → Apps and sales channels',
       'Click "Develop apps"',
-      'Click on your app (e.g., "Baby Baba Dashboard")',
+      'Click on your app (e.g., "Baby Bazar Dashboard")',
       'Click "Configure" under Admin API',
       'Add the required permissions',
       'Click "Save"',

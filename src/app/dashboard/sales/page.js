@@ -1143,7 +1143,7 @@ export default function SalesPage() {
                 <div id="printable-receipt" style={{ display: 'none' }}>
                   {/* Header */}
                   <div className="print-logo">
-                    <h1>BABY BABA</h1>
+                    <h1>BABY BAZAR</h1>
                     <p>Point of Sale System</p>
                   </div>
 
@@ -1261,7 +1261,7 @@ export default function SalesPage() {
                     <p style={{ margin: '4px 0', fontWeight: 'bold' }}>Thank you for your purchase!</p>
                     <p style={{ margin: '4px 0' }}>Visit us again soon</p>
                     <p style={{ margin: '4px 0' }}>For queries: +92 XXX XXXXXXX</p>
-                    <p style={{ margin: '8px 0 0 0', fontSize: '7pt' }}>Powered by Baby Baba POS</p>
+                    <p style={{ margin: '8px 0 0 0', fontSize: '7pt' }}>Powered by Baby Bazar POS</p>
                   </div>
                 </div>
 
