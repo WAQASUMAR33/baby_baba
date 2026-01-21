@@ -130,6 +130,8 @@ export default function SalesPage() {
               margin: 0;
               padding: 0;
               box-sizing: border-box;
+              font-weight: bold;
+              color: #000;
             }
             
             body {
@@ -142,6 +144,7 @@ export default function SalesPage() {
               line-height: 1.2;
               color: #000 !important;
               background: #fff;
+              font-weight: bold;
             }
             
             .print-logo {
@@ -161,6 +164,8 @@ export default function SalesPage() {
             .print-logo p {
               margin: 2px 0;
               font-size: 9pt;
+              font-weight: bold;
+              color: #000;
             }
             
             .print-divider {
@@ -171,6 +176,8 @@ export default function SalesPage() {
             .print-section {
               margin-bottom: 8px;
               font-size: 9pt;
+              font-weight: bold;
+              color: #000;
             }
             
             .print-section div {
@@ -178,6 +185,13 @@ export default function SalesPage() {
               justify-content: space-between;
               margin-bottom: 3px;
               line-height: 1.3;
+              font-weight: bold;
+              color: #000;
+            }
+            
+            .print-section span {
+              font-weight: bold;
+              color: #000;
             }
             
             .print-table {
@@ -201,6 +215,7 @@ export default function SalesPage() {
               border-bottom: 1px dotted #000;
               font-size: 8pt;
               color: #000;
+              font-weight: bold;
             }
             
             .print-table .text-center {
@@ -227,6 +242,13 @@ export default function SalesPage() {
               font-size: 8pt;
               border-top: 1px dashed #000;
               padding-top: 8px;
+              font-weight: bold;
+              color: #000;
+            }
+            
+            .print-footer p {
+              font-weight: bold;
+              color: #000;
             }
             
             @media print {
@@ -381,7 +403,7 @@ export default function SalesPage() {
           <div class="print-footer">
             <p style="margin: 4px 0; font-weight: bold;">Thank you for your purchase!</p>
             <p style="margin: 4px 0;">we look forward to seeing you soon</p>
-            <p style="margin: 8px 0 0 0; font-size: 7pt;">Powered by Baby Baba POS</p>
+            <p style="margin: 8px 0 0 0; font-size: 7pt;">Powered by RapidTechPro</p>
           </div>
 
           <script>

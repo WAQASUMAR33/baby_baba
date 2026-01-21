@@ -504,7 +504,7 @@ export default function EnhancedPOSPage() {
           <div class="print-footer">
             <p style="margin: 4px 0; font-weight: bold;">Thank you for your purchase!</p>
             <p style="margin: 4px 0;">we look forward to seeing you soon</p>
-            <p style="margin: 8px 0 0 0; font-size: 7pt;">Powered by Baby Baba POS</p>
+            <p style="margin: 8px 0 0 0; font-size: 7pt;">Powered by RapidtechPro</p>
           </div>
 
           <script>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
-import prisma from "@/lib/prisma"
+import { findUserByEmail, createUser } from "@/lib/db"
 
 export async function POST(request) {
   try {
@@ -13,9 +13,7 @@ export async function POST(request) {
       )
     }
 
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    })
+    const existingUser = await findUserByEmail(email)
 
     if (existingUser) {
       return NextResponse.json(
@@ -26,12 +24,10 @@ export async function POST(request) {
 
     const hashedPassword = await bcrypt.hash(password, 10)
 
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        name: name || null,
-      }
+    const user = await createUser({
+      email,
+      password: hashedPassword, // Store hashed password
+      name,
     })
 
     return NextResponse.json(

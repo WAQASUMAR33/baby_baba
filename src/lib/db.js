@@ -22,7 +22,7 @@ const parseDatabaseUrl = (url) => {
 // Global connection pool
 let pool = null
 
-function getPool() {
+export function getPool() {
   if (!pool) {
     const dbUrl = process.env.DATABASE_URL || 'mysql://root:@localhost:3306/mydb2'
     try {
@@ -57,5 +57,25 @@ export async function findUserByEmail(email) {
   }
 }
 
-export default { findUserByEmail }
+export async function createUser({ email, password, name }) {
+  try {
+    const connectionPool = getPool()
+    const [result] = await connectionPool.execute(
+      'INSERT INTO User (email, password, name, role, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
+      [email.trim().toLowerCase(), password, name || null, 'user', 'active']
+    )
+    return {
+      id: result.insertId,
+      email: email.trim().toLowerCase(),
+      name: name || null,
+      role: 'user',
+      status: 'active'
+    }
+  } catch (error) {
+    console.error('Database error in createUser:', error.message)
+    throw error
+  }
+}
+
+export default { findUserByEmail, createUser, getPool }
 

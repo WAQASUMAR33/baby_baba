@@ -141,8 +141,30 @@ export async function POST(request) {
             return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 });
         }
 
-        // Generate a unique ID if not provided (for non-Shopify products)
-        const productId = body.id || `local-${Date.now()}`;
+        // Generate a unique ID with timestamp and random string
+        const productId = body.id || `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+        // Generate handle from title
+        const baseHandle = body.handle || body.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+        // Check if handle already exists and make it unique if needed
+        let handle = baseHandle;
+        let handleExists = true;
+        let counter = 1;
+
+        while (handleExists) {
+            const [existingProducts] = await pool.execute(
+                'SELECT id FROM Product WHERE handle = ?',
+                [handle]
+            );
+
+            if (existingProducts.length === 0) {
+                handleExists = false;
+            } else {
+                handle = `${baseHandle}-${counter}`;
+                counter++;
+            }
+        }
 
         // Insert product
         await pool.execute(
@@ -154,13 +176,13 @@ export async function POST(request) {
                 body.title,
                 body.description || null,
                 body.vendor || null,
-                body.product_type || null,
+                body.productType || body.product_type || null,
                 body.status || 'active',
                 body.image || null,
-                body.handle || body.title.toLowerCase().replace(/\s+/g, '-'),
-                parseFloat(body.sale_price || body.price || 0),
-                parseFloat(body.original_price || body.compare_at_price || 0),
-                parseFloat(body.cost_price || body.cost_per_item || 0),
+                handle,
+                parseFloat(body.salePrice || body.sale_price || body.price || 0),
+                parseFloat(body.originalPrice || body.original_price || body.compare_at_price || 0),
+                parseFloat(body.costPrice || body.cost_price || body.cost_per_item || 0),
                 parseInt(body.quantity || body.inventory_quantity || 0),
                 body.categoryId ? parseInt(body.categoryId) : null
             ]
@@ -176,13 +198,13 @@ export async function POST(request) {
                 variantId,
                 productId,
                 body.variant_title || 'Default',
-                parseFloat(body.sale_price || body.price || 0),
-                parseFloat(body.original_price || body.compare_at_price || 0),
+                parseFloat(body.salePrice || body.sale_price || body.price || 0),
+                parseFloat(body.originalPrice || body.original_price || body.compare_at_price || 0),
                 body.sku || null,
                 body.barcode || null,
-                parseInt(body.quantity || body.inventory_quantity || 0),
+                parseInt(body.inventoryQuantity || body.quantity || body.inventory_quantity || 0),
                 parseFloat(body.weight || 0),
-                body.weight_unit || 'kg'
+                body.weightUnit || body.weight_unit || 'kg'
             ]
         );
 
