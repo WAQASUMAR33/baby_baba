@@ -100,21 +100,46 @@ export async function createSale(saleData, userId) {
 
     // Insert sale items and update inventory
     for (const item of itemsWithCommission) {
-      await conn.execute(
-        `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, commission, sku, image, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-        [
-          saleId,
-          String(item.productId),
-          String(item.variantId),
-          item.title,
-          item.price,
-          item.quantity,
-          item.commission,
-          item.sku || null,
-          item.image || null,
-        ]
-      )
+      // Some DBs may not yet have the `commission` column on SaleItem.
+      // Try with commission first, then gracefully fallback without it.
+      try {
+        await conn.execute(
+          `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, commission, sku, image, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            saleId,
+            String(item.productId),
+            String(item.variantId),
+            item.title,
+            item.price,
+            item.quantity,
+            item.commission,
+            item.sku || null,
+            item.image || null,
+          ]
+        )
+      } catch (insertErr) {
+        // Unknown column 'commission' in 'INSERT INTO'
+        if (insertErr?.code === 'ER_BAD_FIELD_ERROR' && String(insertErr?.message || '').includes("commission")) {
+          console.warn('⚠️ SaleItem.commission column missing in DB. Inserting SaleItem without commission. Run prisma db push to add it.')
+          await conn.execute(
+            `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, sku, image, createdAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              saleId,
+              String(item.productId),
+              String(item.variantId),
+              item.title,
+              item.price,
+              item.quantity,
+              item.sku || null,
+              item.image || null,
+            ]
+          )
+        } else {
+          throw insertErr
+        }
+      }
 
       // Update local variant inventory
       await conn.execute(

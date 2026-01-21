@@ -66,6 +66,7 @@ model SaleItem {
   title     String   @db.VarChar(255)
   price     Decimal  @db.Decimal(10, 2)
   quantity  Int
+  commission Decimal @default(0) @db.Decimal(10, 2)
   sku       String?  @db.VarChar(255)
   image     String?  @db.VarChar(500)
   createdAt DateTime @default(now()) @map("createdAt")
