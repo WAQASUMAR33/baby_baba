@@ -56,9 +56,10 @@ export default function DayEndPage() {
         const opening = parseFloat(currentData.openingBalance) || 0;
         const sales = parseFloat(currentData.totalSales) || 0;
         const expenses = parseFloat(currentData.totalExpenses) || 0;
+        const dailyCash = parseFloat(currentData.dailyCash) || 0;
 
-        // Formula: Opening + Sales - Expenses
-        const closing = opening + sales - expenses;
+        // Formula: Opening + Sales - Expenses + Daily Cash
+        const closing = opening + sales - expenses + dailyCash;
 
         setData(prev => ({
             ...prev,
@@ -191,7 +192,7 @@ export default function DayEndPage() {
                             Rs. {data.closingBalance?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </div>
                         <p className="text-sm text-blue-600 mt-2">
-                            (Opening + Sales) - Expenses
+                            (Opening + Sales - Expenses) + Daily Cash
                         </p>
                     </div>
 
