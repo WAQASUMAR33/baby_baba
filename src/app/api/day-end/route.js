@@ -5,18 +5,20 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const dateStr = searchParams.get('date');
 
-    if (!dateStr) {
-        return NextResponse.json({ error: 'Date is required' }, { status: 400 });
-    }
-
-    const date = new Date(dateStr);
-
-    // Start and End of the selected day
-    const startOfDay = new Date(date.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(date.setHours(23, 59, 59, 999));
-
     try {
-        // 1. Try to find existing DayEnd record
+        if (!dateStr) {
+            const records = await prisma.dayEnd.findMany({
+                orderBy: {
+                    date: 'desc',
+                },
+            });
+            return NextResponse.json({ records });
+        }
+
+        const date = new Date(dateStr);
+        const startOfDay = new Date(date.setHours(0, 0, 0, 0));
+        const endOfDay = new Date(date.setHours(23, 59, 59, 999));
+
         const existingRecord = await prisma.dayEnd.findUnique({
             where: {
                 date: startOfDay,
@@ -27,9 +29,6 @@ export async function GET(request) {
             return NextResponse.json(existingRecord);
         }
 
-        // 2. If no record, calculate defaults
-
-        // a. Get Previous Day's Closing Balance (to set as Opening Balance)
         const previousDayRecord = await prisma.dayEnd.findFirst({
             where: {
                 date: {
@@ -43,7 +42,6 @@ export async function GET(request) {
 
         const openingBalance = previousDayRecord ? previousDayRecord.closingBalance : 0;
 
-        // b. Calculate Total Expenses for the day
         const expenses = await prisma.expense.aggregate({
             where: {
                 exp_date: {
@@ -58,7 +56,6 @@ export async function GET(request) {
 
         const totalExpenses = expenses._sum.exp_amount || 0;
 
-        // c. Calculate Total Sales for the day (Completed sales only)
         const sales = await prisma.sale.aggregate({
             where: {
                 createdAt: {
@@ -81,9 +78,8 @@ export async function GET(request) {
             totalExpenses,
             totalSales,
             dailyCash: 0,
-            closingBalance: 0 // Will be calculated on frontend or can be partial
+            closingBalance: 0
         });
-
     } catch (error) {
         console.error('Error fetching day end data:', error);
         return NextResponse.json({ error: 'Failed to fetch data' }, { status: 500 });
