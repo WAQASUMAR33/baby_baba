@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { syncShopifyProductsBatch } from '@/lib/product-sync';
+import { syncShopifyProductsBatch, syncShopifyProductsPage } from '@/lib/product-sync';
 
 /**
  * POST /api/products/sync
@@ -16,8 +16,19 @@ export async function POST(request) {
         const batchSize = parseInt(searchParams.get('batchSize') || '1000');
         const offset = parseInt(searchParams.get('offset') || '0');
         const fullSync = searchParams.get('fullSync') === 'true';
+        const mode = searchParams.get('mode') || 'batch';
+        const limit = parseInt(searchParams.get('limit') || '250');
+        const pageInfo = searchParams.get('pageInfo');
 
-        console.log(`🚀 Starting Shopify product sync - Batch Size: ${batchSize}, Offset: ${offset}, Full Sync: ${fullSync}`);
+        console.log(`🚀 Starting Shopify product sync - Mode: ${mode}, Batch Size: ${batchSize}, Offset: ${offset}, Full Sync: ${fullSync}`);
+
+        if (mode === 'page') {
+            const result = await syncShopifyProductsPage({
+                limit,
+                pageInfo
+            });
+            return NextResponse.json(result);
+        }
 
         if (fullSync) {
             // Full sync mode - sync all products in one go (for smaller catalogs or background jobs)

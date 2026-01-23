@@ -31,7 +31,6 @@ export default function ProductsPage() {
   const [syncResult, setSyncResult] = useState(null)
 
   useEffect(() => {
-    console.log("Products page loaded - Barcode V2")
     fetchProducts()
     fetchCategories()
   }, [])
@@ -150,7 +149,7 @@ export default function ProductsPage() {
 
       console.log('🔄 Fetching products from Local Database...')
 
-      const response = await fetch(`/api/products?limit=2000&sortBy=${sortBy}`, {
+      const response = await fetch(`/api/products?limit=all&sortBy=${sortBy}`, {
         cache: 'no-store'
       })
       const data = await response.json()
@@ -174,24 +173,39 @@ export default function ProductsPage() {
     try {
       setSyncing(true)
       setSyncResult(null)
+      let pageInfo = null
+      let totalImported = 0
+      let totalFailed = 0
+      let hasMore = true
 
-      const response = await fetch('/api/products/sync', {
-        method: 'POST'
-      })
-      const data = await response.json()
+      while (hasMore) {
+        const params = new URLSearchParams()
+        params.set('mode', 'page')
+        params.set('limit', '250')
+        if (pageInfo) {
+          params.set('pageInfo', pageInfo)
+        }
 
-      if (data.success) {
-        setSyncResult({
-          type: 'success',
-          message: `Successfully synced ${data.imported} products!`
+        const response = await fetch(`/api/products/sync?${params.toString()}`, {
+          method: 'POST'
         })
-        fetchProducts() // Refresh list
-      } else {
-        setSyncResult({
-          type: 'error',
-          message: data.error || 'Sync failed'
-        })
+        const data = await response.json()
+
+        if (!data.success) {
+          throw new Error(data.error || 'Sync failed')
+        }
+
+        totalImported += data.imported || 0
+        totalFailed += data.failed || 0
+        pageInfo = data.nextPageInfo || null
+        hasMore = Boolean(data.hasMore && pageInfo)
       }
+
+      setSyncResult({
+        type: 'success',
+        message: `Successfully synced ${totalImported} products${totalFailed ? ` (${totalFailed} failed)` : ''}!`
+      })
+      fetchProducts()
     } catch (err) {
       setSyncResult({
         type: 'error',

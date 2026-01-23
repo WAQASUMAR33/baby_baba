@@ -268,7 +268,7 @@ export default function SalesPage() {
         <body>
           <!-- Header -->
           <div class="print-logo">
-            <img src="/babybazar.png" alt="Baby Bazar Logo" style="height: 60px; margin-bottom: 8px;">
+            <img src="/babybazar.png" alt="Baby Bazar Logo" style="height: 80px; margin-bottom: 8px;">
             <h1 style="text-transform: uppercase;">Baby Bazar</h1>
             <p>Post Office Road Mandi Bahauddin</p>
             <p>Ph : 0347-943-2880</p>
@@ -1443,4 +1443,3 @@ export default function SalesPage() {
     </div>
   )
 }
-

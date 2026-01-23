@@ -1,4 +1,4 @@
-import { getProducts } from './shopify.js'
+import { getProducts, getProductsPage } from './shopify.js'
 import { upsertProduct } from './product-db.js'
 
 /**
@@ -137,7 +137,59 @@ export async function syncShopifyProducts(options = {}, onProgress = null) {
     }
 }
 
+export async function syncShopifyProductsPage(options = {}, onProgress = null) {
+    const limit = Math.min(options.limit || 250, 250)
+    const pageInfo = options.pageInfo || null
+    const status = options.status
+    const order = options.order
+
+    const { products, nextPageInfo, hasMore } = await getProductsPage({
+        limit,
+        pageInfo,
+        status,
+        order
+    })
+
+    if (products.length === 0) {
+        return {
+            success: true,
+            imported: 0,
+            failed: 0,
+            total: 0,
+            nextPageInfo: null,
+            hasMore: false
+        }
+    }
+
+    let successCount = 0
+    let failCount = 0
+
+    for (let i = 0; i < products.length; i++) {
+        const product = products[i]
+        try {
+            await upsertProduct(product)
+            successCount++
+            if (onProgress) {
+                onProgress(successCount, products.length)
+            }
+        } catch (error) {
+            console.error(`❌ Failed to sync product ${product.id}:`, error.message)
+            failCount++
+        }
+    }
+
+    return {
+        success: true,
+        imported: successCount,
+        failed: failCount,
+        total: products.length,
+        nextPageInfo,
+        hasMore
+    }
+}
+
 export default {
     syncShopifyProducts,
-    syncShopifyProductsBatch
+    syncShopifyProductsBatch,
+    syncShopifyProductsPage
 }

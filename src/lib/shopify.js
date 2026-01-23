@@ -192,6 +192,71 @@ export async function getProducts(params = {}) {
   }
 }
 
+export async function getProductsPage(params = {}) {
+  try {
+    const limit = Math.min(params.limit || 250, 250)
+    const queryParams = new URLSearchParams()
+    queryParams.append('limit', limit)
+
+    if (params.status) {
+      queryParams.append('status', params.status)
+    }
+
+    if (!params.pageInfo) {
+      if (params.order) {
+        queryParams.append('order', params.order)
+      } else {
+        queryParams.append('order', 'created_at desc')
+      }
+    }
+
+    if (params.pageInfo) {
+      queryParams.append('page_info', params.pageInfo)
+    }
+
+    Object.keys(params).forEach(key => {
+      if (key !== 'limit' && key !== 'status' && key !== 'page' && key !== 'page_info' && key !== 'maxProducts' && key !== 'order' && key !== 'pageInfo') {
+        queryParams.append(key, params[key])
+      }
+    })
+
+    const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/products.json?${queryParams}`
+
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+      },
+    })
+
+    if (!response.ok) {
+      const errorData = await response.text()
+      throw new Error(`Shopify API Error: ${response.status} - ${errorData}`)
+    }
+
+    const data = await response.json()
+    const products = data.products || []
+    const linkHeader = response.headers.get('Link')
+    let nextPageInfo = null
+
+    if (linkHeader && linkHeader.includes('rel="next"')) {
+      const nextLinkMatch = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="next"/)
+      if (nextLinkMatch && nextLinkMatch[1]) {
+        nextPageInfo = nextLinkMatch[1]
+      }
+    }
+
+    return {
+      products,
+      nextPageInfo,
+      hasMore: Boolean(nextPageInfo),
+    }
+  } catch (error) {
+    console.error('❌ Error fetching product page:', error)
+    throw error
+  }
+}
+
 /**
  * Fetch a single product by ID
  * @param {string|number} productId - Product ID
@@ -701,6 +766,7 @@ export async function getOrder(orderId) {
 
 export default {
   getProducts,
+  getProductsPage,
   getProduct,
   createProduct,
   updateProduct,
@@ -722,4 +788,3 @@ export default {
   getOrders,
   getOrder,
 }
-

@@ -36,7 +36,9 @@ export async function GET(request) {
         const status = searchParams.get('status') || 'all';
         const vendor = searchParams.get('vendor') || 'all';
         const sortBy = searchParams.get('sortBy') || 'name';
-        const limit = parseInt(searchParams.get('limit') || '2000');
+        const limitParam = searchParams.get('limit');
+        const limit = limitParam && limitParam !== 'all' ? parseInt(limitParam) : 10000;
+        const applyLimit = limitParam !== 'all';
 
         const pool = getPool();
 
@@ -80,8 +82,10 @@ export async function GET(request) {
             default: query += ` ORDER BY p.updatedAt DESC`;
         }
 
-        query += ` LIMIT ?`;
-        params.push(limit);
+        if (applyLimit) {
+            query += ` LIMIT ?`;
+            params.push(limit);
+        }
 
         const [rows] = await pool.execute(query, params);
 

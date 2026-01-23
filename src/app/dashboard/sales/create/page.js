@@ -250,6 +250,8 @@ export default function EnhancedPOSPage() {
               margin: 0;
               padding: 0;
               box-sizing: border-box;
+              font-weight: bold;
+              color: #000;
             }
             
             body {
@@ -262,6 +264,7 @@ export default function EnhancedPOSPage() {
               line-height: 1.2;
               color: #000 !important;
               background: #fff;
+              font-weight: bold;
             }
             
             .print-logo {
@@ -321,6 +324,7 @@ export default function EnhancedPOSPage() {
               border-bottom: 1px dotted #000;
               font-size: 8pt;
               color: #000;
+              font-weight: bold;
             }
             
             .print-table .text-center {
@@ -366,7 +370,7 @@ export default function EnhancedPOSPage() {
         <body>
           <!-- Header -->
           <div class="print-logo">
-            <img src="/babybazar.png" alt="Baby Bazar Logo" style="height: 60px; margin-bottom: 8px;">
+            <img src="/babybazar.png" alt="Baby Bazar Logo" style="height: 80px; margin-bottom: 8px;">
             <h1 style="text-transform: uppercase;">Baby Bazar</h1>
             <p>Post Office Road Mandi Bahauddin</p>
             <p>Ph : 0347-943-2880</p>
