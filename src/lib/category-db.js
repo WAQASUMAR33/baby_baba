@@ -35,11 +35,31 @@ function getPool() {
     return pool
 }
 
+let tableNamesCache = null
+async function getTableNames() {
+    if (tableNamesCache) return tableNamesCache
+    const connection = getPool()
+    const [rows] = await connection.query('SHOW TABLES')
+    const tableList = rows.map((r) => Object.values(r)[0])
+    const resolve = (candidates) => {
+        for (const name of candidates) {
+            if (tableList.includes(name)) return name
+        }
+        return candidates[0]
+    }
+    tableNamesCache = {
+        category: resolve(['Category', 'category']),
+        product: resolve(['Product', 'product']),
+    }
+    return tableNamesCache
+}
+
 export async function getCategories() {
     try {
         const connection = getPool()
+        const { category, product } = await getTableNames()
         const [categories] = await connection.execute(
-            'SELECT c.*, COUNT(p.id) as productsCount FROM category c LEFT JOIN product p ON c.id = p.categoryId GROUP BY c.id ORDER BY c.name ASC'
+            `SELECT c.*, COUNT(p.id) as productsCount FROM ${category} c LEFT JOIN ${product} p ON c.id = p.categoryId GROUP BY c.id ORDER BY c.name ASC`
         )
         return categories
     } catch (error) {
@@ -51,8 +71,9 @@ export async function getCategories() {
 export async function createCategory(data) {
     try {
         const connection = getPool()
+        const { category } = await getTableNames()
         const [result] = await connection.execute(
-            'INSERT INTO Category (name, description, slug, createdAt, updatedAt) VALUES (?, ?, ?, NOW(3), NOW(3))',
+            `INSERT INTO ${category} (name, description, slug, createdAt, updatedAt) VALUES (?, ?, ?, NOW(3), NOW(3))`,
             [data.name, data.description || null, data.slug]
         )
         return { id: result.insertId, ...data }
@@ -65,8 +86,9 @@ export async function createCategory(data) {
 export async function updateCategory(id, data) {
     try {
         const connection = getPool()
+        const { category } = await getTableNames()
         await connection.execute(
-            'UPDATE Category SET name = ?, description = ?, slug = ?, updatedAt = NOW(3) WHERE id = ?',
+            `UPDATE ${category} SET name = ?, description = ?, slug = ?, updatedAt = NOW(3) WHERE id = ?`,
             [data.name, data.description || null, data.slug, id]
         )
         return { id, ...data }
@@ -79,8 +101,9 @@ export async function updateCategory(id, data) {
 export async function deleteCategory(id) {
     try {
         const connection = getPool()
+        const { category } = await getTableNames()
         // Product categoryId will be set to NULL due to ON DELETE SET NULL constraint if it exists
-        await connection.execute('DELETE FROM Category WHERE id = ?', [id])
+        await connection.execute(`DELETE FROM ${category} WHERE id = ?`, [id])
         return { success: true }
     } catch (error) {
         console.error('❌ Error deleting category:', error)

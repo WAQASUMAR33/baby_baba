@@ -29,6 +29,26 @@ function getPool() {
     return pool;
 }
 
+let tableNamesCache = null;
+async function getTableNames() {
+    if (tableNamesCache) return tableNamesCache;
+    const pool = getPool();
+    const [rows] = await pool.query('SHOW TABLES');
+    const tableList = rows.map((r) => Object.values(r)[0]);
+    const resolve = (candidates) => {
+        for (const name of candidates) {
+            if (tableList.includes(name)) return name;
+        }
+        return candidates[0];
+    };
+    tableNamesCache = {
+        product: resolve(['Product', 'product']),
+        productvariant: resolve(['ProductVariant', 'productvariant']),
+        category: resolve(['Category', 'category']),
+    };
+    return tableNamesCache;
+}
+
 export async function GET(request) {
     try {
         const { searchParams } = new URL(request.url);
@@ -42,6 +62,7 @@ export async function GET(request) {
         const limit = applyLimit ? parsedLimit : null;
 
         const pool = getPool();
+        const { product, productvariant, category } = await getTableNames();
 
         let query = `
       SELECT p.id, p.title, p.vendor, p.product_type, p.status, p.handle, p.updatedAt,
@@ -49,9 +70,9 @@ export async function GET(request) {
              c.name as categoryName,
              v.id as variant_id, v.title as variant_title, v.price, v.compare_at_price, 
              v.sku, v.barcode, v.inventory_quantity, v.weight, v.weight_unit
-      FROM product p
-      LEFT JOIN productvariant v ON p.id = v.productId
-      LEFT JOIN category c ON p.categoryId = c.id
+      FROM ${product} p
+      LEFT JOIN ${productvariant} v ON p.id = v.productId
+      LEFT JOIN ${category} c ON p.categoryId = c.id
     `;
         const params = [];
         const conditions = [];
@@ -95,9 +116,9 @@ export async function GET(request) {
 
         let countQuery = `
       SELECT COUNT(DISTINCT p.id) as total
-      FROM product p
-      LEFT JOIN productvariant v ON p.id = v.productId
-      LEFT JOIN category c ON p.categoryId = c.id
+      FROM ${product} p
+      LEFT JOIN ${productvariant} v ON p.id = v.productId
+      LEFT JOIN ${category} c ON p.categoryId = c.id
     `
         if (conditions.length > 0) {
             countQuery += ` WHERE ${conditions.join(' AND ')}`
@@ -156,6 +177,7 @@ export async function POST(request) {
     try {
         const body = await request.json();
         const pool = getPool();
+        const { product, productvariant } = await getTableNames();
 
         // Validate required fields
         if (!body.title) {
@@ -175,7 +197,7 @@ export async function POST(request) {
 
         while (handleExists) {
             const [existingProducts] = await pool.execute(
-                'SELECT id FROM product WHERE handle = ?',
+                `SELECT id FROM ${product} WHERE handle = ?`,
                 [handle]
             );
 
@@ -189,7 +211,7 @@ export async function POST(request) {
 
         // Insert product
         await pool.execute(
-            `INSERT INTO product (id, title, description, vendor, product_type, status, image, handle, 
+            `INSERT INTO ${product} (id, title, description, vendor, product_type, status, image, handle, 
              sale_price, original_price, cost_price, quantity, categoryId, createdAt, updatedAt) 
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
             [
@@ -212,7 +234,7 @@ export async function POST(request) {
         // Insert variant (every product needs at least one variant)
         const variantId = body.variant_id || `${productId}-variant-1`;
         await pool.execute(
-            `INSERT INTO productvariant (id, productId, title, price, compare_at_price, sku, barcode, 
+            `INSERT INTO ${productvariant} (id, productId, title, price, compare_at_price, sku, barcode, 
              inventory_quantity, weight, weight_unit, createdAt, updatedAt) 
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
             [

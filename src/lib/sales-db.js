@@ -36,6 +36,24 @@ function getPool() {
   return pool
 }
 
+let productTablesCache = null
+async function getProductTables() {
+  if (productTablesCache) return productTablesCache
+  const connection = getPool()
+  const [rows] = await connection.query('SHOW TABLES')
+  const tableList = rows.map((r) => Object.values(r)[0])
+  const resolve = (candidates) => {
+    for (const name of candidates) {
+      if (tableList.includes(name)) return name
+    }
+    return candidates[0]
+  }
+  productTablesCache = {
+    product: resolve(['Product', 'product']),
+    productvariant: resolve(['ProductVariant', 'productvariant']),
+  }
+  return productTablesCache
+}
 async function ensureSaleItemDiscountColumn(connection) {
   if (hasSaleItemDiscountColumn !== null) return
   try {
@@ -204,16 +222,22 @@ export async function createSale(saleData, userId) {
       }
 
       // Update local variant inventory
-      await conn.execute(
-        `UPDATE productvariant SET inventory_quantity = inventory_quantity - ?, updatedAt = NOW() WHERE id = ?`,
-        [item.quantity, String(item.variantId)]
-      )
+      {
+        const { productvariant: variantTable } = await getProductTables()
+        await conn.execute(
+          `UPDATE ${variantTable} SET inventory_quantity = inventory_quantity - ?, updatedAt = NOW() WHERE id = ?`,
+          [item.quantity, String(item.variantId)]
+        )
+      }
 
       // Update local product total quantity
-      await conn.execute(
-        `UPDATE product SET quantity = quantity - ?, updatedAt = NOW() WHERE id = ?`,
-        [item.quantity, String(item.productId)]
-      )
+      {
+        const { product: productTable } = await getProductTables()
+        await conn.execute(
+          `UPDATE ${productTable} SET quantity = quantity - ?, updatedAt = NOW() WHERE id = ?`,
+          [item.quantity, String(item.productId)]
+        )
+      }
     }
 
     await conn.commit()

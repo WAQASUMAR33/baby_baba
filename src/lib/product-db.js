@@ -16,6 +16,7 @@ const parseDatabaseUrl = (url) => {
 
 // Create connection pool
 let pool = null
+let tableNamesCache = null
 
 function getPool() {
   if (!pool) {
@@ -34,6 +35,24 @@ function getPool() {
   return pool
 }
 
+async function getTableNames() {
+  if (tableNamesCache) return tableNamesCache
+  const connection = getPool()
+  const [rows] = await connection.query('SHOW TABLES')
+  const tableList = rows.map((r) => Object.values(r)[0])
+  const resolve = (candidates) => {
+    for (const name of candidates) {
+      if (tableList.includes(name)) return name
+    }
+    return candidates[0]
+  }
+  tableNamesCache = {
+    product: resolve(['Product', 'product']),
+    productvariant: resolve(['ProductVariant', 'productvariant']),
+  }
+  return tableNamesCache
+}
+
 /**
  * Upsert a product and its variants into the local database
  * @param {object} product - Shopify product object
@@ -44,6 +63,7 @@ export async function upsertProduct(product) {
 
   try {
     await conn.beginTransaction()
+    const { product: productTable, productvariant: variantTable } = await getTableNames()
 
     // Upsert product
     const productSalePrice = product.variants?.[0]?.price || 0
@@ -64,7 +84,7 @@ export async function upsertProduct(product) {
     ]
 
     await conn.execute(
-      `INSERT INTO product (id, title, description, vendor, product_type, status, image, handle, sale_price, cost_price, quantity, updatedAt)
+      `INSERT INTO ${productTable} (id, title, description, vendor, product_type, status, image, handle, sale_price, cost_price, quantity, updatedAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
        ON DUPLICATE KEY UPDATE
        title = VALUES(title),
@@ -81,7 +101,7 @@ export async function upsertProduct(product) {
     )
 
     // Delete existing variants for this product to sync
-    await conn.execute('DELETE FROM productvariant WHERE productId = ?', [String(product.id)])
+    await conn.execute(`DELETE FROM ${variantTable} WHERE productId = ?`, [String(product.id)])
 
     // Insert new variants
     for (const variant of product.variants || []) {
@@ -99,7 +119,7 @@ export async function upsertProduct(product) {
       ]
 
       await conn.execute(
-        `INSERT INTO productvariant (id, productId, title, price, compare_at_price, sku, barcode, inventory_quantity, weight, weight_unit, updatedAt)
+        `INSERT INTO ${variantTable} (id, productId, title, price, compare_at_price, sku, barcode, inventory_quantity, weight, weight_unit, updatedAt)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
         variantData
       )
@@ -121,8 +141,9 @@ export async function upsertProduct(product) {
 export async function clearProducts() {
   const connection = getPool()
   try {
-    await connection.execute('DELETE FROM productvariant')
-    await connection.execute('DELETE FROM product')
+    const { product: productTable, productvariant: variantTable } = await getTableNames()
+    await connection.execute(`DELETE FROM ${variantTable}`)
+    await connection.execute(`DELETE FROM ${productTable}`)
     console.log('✅ Cleared all products and variants from database')
   } catch (error) {
     console.error('❌ Error clearing products:', error)
@@ -137,7 +158,8 @@ export async function clearProducts() {
 export async function getLocalProductCount() {
   const connection = getPool()
   try {
-    const [rows] = await connection.execute('SELECT COUNT(*) as count FROM product')
+    const { product: productTable } = await getTableNames()
+    const [rows] = await connection.execute(`SELECT COUNT(*) as count FROM ${productTable}`)
     return rows[0]?.count || 0
   } catch (error) {
     console.error('❌ Error getting product count:', error)
@@ -153,8 +175,9 @@ export async function getLocalProductCount() {
 export async function updateProductCategory(productId, categoryId) {
   const connection = getPool()
   try {
+    const { product: productTable } = await getTableNames()
     await connection.execute(
-      'UPDATE product SET categoryId = ?, updatedAt = NOW() WHERE id = ?',
+      `UPDATE ${productTable} SET categoryId = ?, updatedAt = NOW() WHERE id = ?`,
       [categoryId, String(productId)]
     )
     return { success: true }
@@ -171,8 +194,9 @@ export async function updateProductCategory(productId, categoryId) {
 export async function getProductById(id) {
   const connection = getPool()
   try {
+    const { product: productTable, productvariant: variantTable } = await getTableNames()
     const [products] = await connection.execute(
-      'SELECT * FROM product WHERE id = ? LIMIT 1',
+      `SELECT * FROM ${productTable} WHERE id = ? LIMIT 1`,
       [String(id)]
     )
 
@@ -181,7 +205,7 @@ export async function getProductById(id) {
     const product = products[0]
 
     const [variants] = await connection.execute(
-      'SELECT * FROM productvariant WHERE productId = ?',
+      `SELECT * FROM ${variantTable} WHERE productId = ?`,
       [String(id)]
     )
 
@@ -203,8 +227,9 @@ export async function deleteProduct(id) {
   try {
     await conn.beginTransaction()
 
-    await conn.execute('DELETE FROM productvariant WHERE productId = ?', [String(id)])
-    await conn.execute('DELETE FROM product WHERE id = ?', [String(id)])
+    const { product: productTable, productvariant: variantTable } = await getTableNames()
+    await conn.execute(`DELETE FROM ${variantTable} WHERE productId = ?`, [String(id)])
+    await conn.execute(`DELETE FROM ${productTable} WHERE id = ?`, [String(id)])
 
     await conn.commit()
     return { success: true }
@@ -227,6 +252,7 @@ export async function updateProduct(id, data) {
   const conn = await connection.getConnection()
   try {
     await conn.beginTransaction()
+    const { product: productTable, productvariant: variantTable } = await getTableNames()
 
     // Update Product table
     const updateFields = []
@@ -244,7 +270,7 @@ export async function updateProduct(id, data) {
     if (updateFields.length > 0) {
       params.push(String(id))
       await conn.execute(
-        `UPDATE product SET ${updateFields.join(', ')}, updatedAt = NOW() WHERE id = ?`,
+        `UPDATE ${productTable} SET ${updateFields.join(', ')}, updatedAt = NOW() WHERE id = ?`,
         params
       )
     }
@@ -252,7 +278,7 @@ export async function updateProduct(id, data) {
     // Update main variant if barcode or prices are provided
     if (data.barcode !== undefined || data.sale_price !== undefined || data.original_price !== undefined) {
       // Find the first variant
-      const [variants] = await conn.execute('SELECT id FROM productvariant WHERE productId = ? LIMIT 1', [String(id)])
+      const [variants] = await conn.execute(`SELECT id FROM ${variantTable} WHERE productId = ? LIMIT 1`, [String(id)])
       if (variants.length > 0) {
         const variantId = variants[0].id
         const vUpdateFields = []
@@ -265,7 +291,7 @@ export async function updateProduct(id, data) {
         if (vUpdateFields.length > 0) {
           vParams.push(variantId)
           await conn.execute(
-            `UPDATE productvariant SET ${vUpdateFields.join(', ')}, updatedAt = NOW() WHERE id = ?`,
+            `UPDATE ${variantTable} SET ${vUpdateFields.join(', ')}, updatedAt = NOW() WHERE id = ?`,
             vParams
           )
         }
