@@ -65,6 +65,7 @@ export const authOptions = {
             email: user.email,
             name: user.name || user.email,
             role: user.role || 'user',
+            modules: user.modules || [],
           }
         } catch (error) {
           console.error("Login error:", error)
@@ -88,6 +89,7 @@ export const authOptions = {
         token.email = user.email
         token.name = user.name
         token.role = user.role
+        token.modules = user.modules || []
       }
       return token
     },
@@ -97,6 +99,7 @@ export const authOptions = {
         session.user.email = token.email
         session.user.name = token.name
         session.user.role = token.role
+        session.user.modules = token.modules || []
       }
       return session
     },
@@ -112,4 +115,3 @@ export const authOptions = {
 const handler = NextAuth(authOptions)
 
 export { handler as GET, handler as POST }
-

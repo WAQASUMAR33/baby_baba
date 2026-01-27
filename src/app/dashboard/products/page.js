@@ -29,6 +29,11 @@ export default function ProductsPage() {
   // Sync state
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
+  const [syncProgress, setSyncProgress] = useState({ imported: 0, failed: 0 })
+  const [showSyncErrorModal, setShowSyncErrorModal] = useState(false)
+  const [syncErrorMessage, setSyncErrorMessage] = useState("")
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 50
 
   useEffect(() => {
     fetchProducts()
@@ -103,7 +108,15 @@ export default function ProductsPage() {
     })
 
     setFilteredProducts(filtered)
+    setCurrentPage(1)
   }, [searchTerm, products, statusFilter, stockFilter, vendorFilter, sortBy])
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize))
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages)
+    }
+  }, [filteredProducts.length, currentPage, pageSize])
 
   const fetchCategories = async () => {
     try {
@@ -173,6 +186,9 @@ export default function ProductsPage() {
     try {
       setSyncing(true)
       setSyncResult(null)
+      setSyncProgress({ imported: 0, failed: 0 })
+      setShowSyncErrorModal(false)
+      setSyncErrorMessage("")
       let pageInfo = null
       let totalImported = 0
       let totalFailed = 0
@@ -197,6 +213,7 @@ export default function ProductsPage() {
 
         totalImported += data.imported || 0
         totalFailed += data.failed || 0
+        setSyncProgress({ imported: totalImported, failed: totalFailed })
         pageInfo = data.nextPageInfo || null
         hasMore = Boolean(data.hasMore && pageInfo)
       }
@@ -207,6 +224,8 @@ export default function ProductsPage() {
       })
       fetchProducts()
     } catch (err) {
+      setSyncErrorMessage(err.message || 'An error occurred during sync')
+      setShowSyncErrorModal(true)
       setSyncResult({
         type: 'error',
         message: err.message || 'An error occurred during sync'
@@ -224,6 +243,11 @@ export default function ProductsPage() {
     setBarcodeLabelName(product?.title || "Product")
     setShowBarcodeModal(true)
   }
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize))
+  const startIndex = (currentPage - 1) * pageSize
+  const endIndex = Math.min(startIndex + pageSize, filteredProducts.length)
+  const paginatedProducts = filteredProducts.slice(startIndex, endIndex)
 
   const closeBarcodeModal = () => {
     setShowBarcodeModal(false)
@@ -492,6 +516,11 @@ export default function ProductsPage() {
                 </>
               )}
             </button>
+            {syncing && (
+              <div className="text-sm text-gray-600">
+                Synced {syncProgress.imported}{syncProgress.failed ? ` (${syncProgress.failed} failed)` : ''} so far
+              </div>
+            )}
             <Link
               href="/dashboard/products/add"
               className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
@@ -551,6 +580,37 @@ export default function ProductsPage() {
           </div>
         </div>
       </div>
+
+      {showSyncErrorModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="px-6 py-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Sync Failed</h3>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <p className="text-sm text-gray-600">{syncErrorMessage}</p>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Synced products</span>
+                  <span className="font-semibold text-gray-900">{syncProgress.imported}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm mt-2">
+                  <span className="text-gray-600">Failed products</span>
+                  <span className="font-semibold text-red-600">{syncProgress.failed}</span>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t flex justify-end">
+              <button
+                onClick={() => setShowSyncErrorModal(false)}
+                className="inline-flex items-center px-4 py-2 rounded-md bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-200 p-4">
@@ -849,8 +909,33 @@ export default function ProductsPage() {
           </p>
         </div>
       ) : (
-        <div className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-x-auto">
-          <table className="min-w-[1200px] w-full divide-y divide-gray-200">
+        <div className="space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="text-sm text-gray-600">
+              Showing {startIndex + 1}-{endIndex} of {filteredProducts.length} products
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <div className="text-sm text-gray-700">
+                Page {currentPage} of {totalPages}
+              </div>
+              <button
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+          <div className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-x-auto">
+            <table className="min-w-[1200px] w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -877,7 +962,7 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredProducts.map((product) => {
+              {paginatedProducts.map((product) => {
                 const variant = product.variants?.[0]
 
                 return (
@@ -957,6 +1042,7 @@ export default function ProductsPage() {
             </tbody>
           </table>
         </div>
+      </div>
       )}
 
       {/* Refined Barcode Print Modal */}

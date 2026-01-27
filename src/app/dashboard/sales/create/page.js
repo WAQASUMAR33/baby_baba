@@ -370,7 +370,7 @@ export default function EnhancedPOSPage() {
         <body>
           <!-- Header -->
           <div class="print-logo">
-            <img src="/babybazar.png" alt="Baby Bazar Logo" style="height: 80px; margin-bottom: 8px;">
+            <img src="/babybazar.jpeg" alt="Baby Bazar Logo" style="height: 80px; margin-bottom: 8px;">
             <h1 style="text-transform: uppercase;">Baby Bazar</h1>
             <p>Post Office Road Mandi Bahauddin</p>
             <p>Ph : 0347-943-2880</p>
@@ -433,9 +433,10 @@ export default function EnhancedPOSPage() {
       const itemNetTotal = itemTotal - itemDiscount
       return `
                 <tr>
-                  <td>
-                    <div style="font-weight: bold;">${item.title || item.productName || 'N/A'}</div>
-                  </td>
+                  <td colspan="6" style="font-weight: bold;">${item.title || item.productName || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <td></td>
                   <td class="text-right">${parseFloat(item.price || 0).toFixed(0)}</td>
                   <td class="text-right">${item.quantity || 0}</td>
                   <td class="text-right">${(parseFloat(item.price || 0) * parseInt(item.quantity || 0)).toFixed(0)}</td>
@@ -446,7 +447,7 @@ export default function EnhancedPOSPage() {
                 </tr>
               `}).join('') : `
                 <tr>
-                  <td colspan="5" style="text-align: center; padding: 8px 0;">
+                  <td colspan="6" style="text-align: center; padding: 8px 0;">
                     No items
                   </td>
                 </tr>
@@ -462,19 +463,10 @@ export default function EnhancedPOSPage() {
               <span>Subtotal:</span>
               <span>${formatCurrency(sale.subtotal || 0)}</span>
             </div>
-            ${(() => {
-        const itemDiscounts = sale.items?.reduce((sum, item) => sum + parseFloat(item.discount || 0), 0) || 0
-        return itemDiscounts > 0 ? `
-              <div>
-                <span>Item Discounts:</span>
-                <span>-${formatCurrency(itemDiscounts)}</span>
-              </div>
-              ` : ''
-      })()}
-            ${parseFloat(sale.globalDiscount || 0) > 0 ? `
+            ${parseFloat(sale.discount ?? sale.globalDiscount ?? sale.billDiscount ?? 0) > 0 ? `
             <div>
               <span>Bill Discount:</span>
-              <span>-${formatCurrency(sale.globalDiscount)}</span>
+              <span>-${formatCurrency(sale.discount ?? sale.globalDiscount ?? sale.billDiscount ?? 0)}</span>
             </div>
             ` : ''}
             <div class="print-total">
@@ -510,6 +502,12 @@ export default function EnhancedPOSPage() {
             <p style="margin: 4px 0; font-weight: bold;">Thank you for your purchase!</p>
             <p style="margin: 4px 0;">we look forward to seeing you soon</p>
             <p style="margin: 8px 0 0 0; font-size: 7pt;">Powered by RapidtechPro</p>
+            <div style="margin-top: 8px; font-size: 7pt; text-align: left;">
+              <p style="margin: 4px 0; font-weight: bold;">Important Note:</p>
+              <p style="margin: 2px 0;">*Products will not be returned or exchanged without the original bill.</p>
+              <p style="margin: 2px 0;">Garments, Shoes, Hosiery Items, Feeding Items, Stuff Toys Can Be Returned Or Exchanged Within 4 Days.</p>
+              <p style="margin: 2px 0;">*All Electric Items, Small Toys, Prams, Wooden Cots, Wooden Cupboards, Wooden Beds, Cycles Will Not Be Returned Nor Exchanged.</p>
+            </div>
           </div>
 
           <script>

@@ -15,6 +15,7 @@ export default function UsersPage() {
     const [modalMode, setModalMode] = useState('add') // 'add' or 'edit'
     const [selectedUser, setSelectedUser] = useState(null)
     const [submitting, setSubmitting] = useState(false)
+    const [customRole, setCustomRole] = useState('')
 
     // Form fields
     const [formData, setFormData] = useState({
@@ -23,6 +24,7 @@ export default function UsersPage() {
         password: '',
         role: 'user',
         status: 'active',
+        modules: [],
     })
 
     useEffect(() => {
@@ -53,6 +55,7 @@ export default function UsersPage() {
             password: '',
             role: 'user',
             status: 'active',
+            modules: [],
         })
         setShowModal(true)
     }
@@ -66,6 +69,7 @@ export default function UsersPage() {
             password: '', // Don't show password
             role: user.role || 'user',
             status: user.status || 'active',
+            modules: Array.isArray(user.modules) ? user.modules : [],
         })
         setShowModal(true)
     }
@@ -151,6 +155,39 @@ export default function UsersPage() {
         (user.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
         (user.email?.toLowerCase() || '').includes(searchTerm.toLowerCase())
     )
+    const roleOptions = Array.from(
+        new Set(
+            ['user', 'admin', ...users.map((user) => user.role).filter(Boolean), formData.role].filter(Boolean)
+        )
+    )
+    const moduleOptions = [
+        { key: 'dashboard', label: 'Dashboard' },
+        { key: 'products', label: 'Products' },
+        { key: 'sales', label: 'Sales' },
+        { key: 'expenses', label: 'Expenses' },
+        { key: 'day-end', label: 'Day End' },
+        { key: 'categories', label: 'Categories' },
+        { key: 'customers', label: 'Customers' },
+        { key: 'employees', label: 'Employees' },
+        { key: 'users', label: 'Users' },
+        { key: 'settings', label: 'Settings' },
+    ]
+
+    const applyCustomRole = () => {
+        const trimmedRole = customRole.trim()
+        if (!trimmedRole) return
+        setFormData({ ...formData, role: trimmedRole })
+        setCustomRole('')
+    }
+
+    const toggleModule = (moduleKey) => {
+        setFormData((prev) => {
+            const nextModules = prev.modules.includes(moduleKey)
+                ? prev.modules.filter((item) => item !== moduleKey)
+                : [...prev.modules, moduleKey]
+            return { ...prev, modules: nextModules }
+        })
+    }
 
     if (loading && users.length === 0) {
         return (
@@ -327,9 +364,29 @@ export default function UsersPage() {
                                         onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                                         className="w-full px-4 py-3 rounded-xl border-gray-200 focus:ring-indigo-500 focus:border-indigo-500 border transition-all text-gray-900 shadow-sm"
                                     >
-                                        <option value="user">User</option>
-                                        <option value="admin">Admin</option>
+                                        {roleOptions.map((roleOption) => (
+                                            <option key={roleOption} value={roleOption}>
+                                                {roleOption.charAt(0).toUpperCase() + roleOption.slice(1)}
+                                            </option>
+                                        ))}
                                     </select>
+                                    <div className="mt-3 flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={customRole}
+                                            onChange={(e) => setCustomRole(e.target.value)}
+                                            placeholder="Add custom role"
+                                            className="flex-1 px-4 py-2 rounded-xl border-gray-200 focus:ring-indigo-500 focus:border-indigo-500 border transition-all text-gray-900 shadow-sm"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={applyCustomRole}
+                                            disabled={!customRole.trim()}
+                                            className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-sm"
+                                        >
+                                            Add
+                                        </button>
+                                    </div>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-1">Status</label>
@@ -341,6 +398,23 @@ export default function UsersPage() {
                                         <option value="active">Active</option>
                                         <option value="inactive">Inactive</option>
                                     </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Modules</label>
+                                <div className="mt-2 grid grid-cols-2 gap-3">
+                                    {moduleOptions.map((moduleOption) => (
+                                        <label key={moduleOption.key} className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 shadow-sm">
+                                            <input
+                                                type="checkbox"
+                                                checked={formData.modules.includes(moduleOption.key)}
+                                                onChange={() => toggleModule(moduleOption.key)}
+                                                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                            />
+                                            <span>{moduleOption.label}</span>
+                                        </label>
+                                    ))}
                                 </div>
                             </div>
 

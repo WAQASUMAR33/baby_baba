@@ -10,14 +10,14 @@ async function createUser() {
     const dbUrl = process.env.DATABASE_URL || 'mysql://root:@localhost:3306/mydb2'
     console.log('Connecting to database...')
     
-    const match = dbUrl.match(/mysql:\/\/([^:]+)(?::([^@]*))?@([^:]+):(\d+)\/(.+)/)
+    const match = dbUrl.match(/^mysql:\/\/([^:@/]+)(?::([^@/]*))?@([^:/]+)(?::(\d+))?\/(.+)$/)
     if (!match) {
       throw new Error('Invalid DATABASE_URL format')
     }
     
     const config = {
       host: match[3],
-      port: parseInt(match[4]),
+      port: match[4] ? parseInt(match[4]) : 3306,
       user: match[1],
       password: match[2] || '',
       database: match[5],
@@ -28,7 +28,7 @@ async function createUser() {
     
     const email = 'theitxprts@gmail.com'
     const password = '786ninja'
-    const name = 'Test User'
+    const name = 'Admin'
     
     // Check if user exists
     const [existing] = await connection.execute(
@@ -51,14 +51,15 @@ async function createUser() {
     // Insert user
     console.log('Creating user...')
     const [result] = await connection.execute(
-      'INSERT INTO User (email, password, name, createdAt, updatedAt) VALUES (?, ?, ?, NOW(), NOW())',
-      [email, hashedPassword, name]
+      'INSERT INTO User (email, password, name, role, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
+      [email, hashedPassword, name, 'admin', 'active']
     )
     
     console.log('')
     console.log('✅ User created successfully!')
     console.log('📧 Email:', email)
     console.log('👤 Name:', name)
+    console.log('🔐 Role: admin')
     console.log('🆔 ID:', result.insertId)
     console.log('')
     console.log('You can now login with:')

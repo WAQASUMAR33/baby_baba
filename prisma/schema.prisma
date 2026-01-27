@@ -15,11 +15,12 @@ datasource db {
 
 model user {
   id        Int      @id @default(autoincrement())
-  email     String   @unique @db.VarChar(255)
+  email     String   @unique @db.VarChar(191)
   password  String   @db.VarChar(255)
   name      String?  @db.VarChar(255)
   role      String   @default("user") @db.VarChar(50)
   status    String   @default("active") @db.VarChar(50)
+  modules   String?  @db.Text
   createdAt DateTime @default(now()) @map("createdAt")
   updatedAt DateTime @updatedAt @map("updatedAt")
 
@@ -107,14 +108,14 @@ model Expense {
 }
 
 model Product {
-  id                String   @id @db.VarChar(255) // Shopify Product ID
+  id                String   @id @db.VarChar(191)
   title             String   @db.VarChar(255)
   description       String?  @db.Text
   vendor            String?  @db.VarChar(255)
   productType       String?  @db.VarChar(255) @map("product_type")
   status            String   @default("active") @db.VarChar(50)
   image             String?  @db.VarChar(500)
-  handle            String?  @unique @db.VarChar(255)
+  handle            String?  @unique @db.VarChar(191)
   salePrice         Decimal  @default(0) @db.Decimal(10, 2) @map("sale_price")
   originalPrice     Decimal  @default(0) @db.Decimal(10, 2) @map("original_price")
   costPrice         Decimal  @default(0) @db.Decimal(10, 2) @map("cost_price")
@@ -131,8 +132,8 @@ model Product {
 }
 
 model ProductVariant {
-  id                String   @id @db.VarChar(255) // Shopify Variant ID
-  productId         String   @map("productId") @db.VarChar(255)
+  id                String   @id @db.VarChar(191)
+  productId         String   @map("productId") @db.VarChar(191)
   title             String?  @db.VarChar(255)
   price             Decimal  @db.Decimal(10, 2)
   compareAtPrice    Decimal? @db.Decimal(10, 2) @map("compare_at_price")
@@ -154,7 +155,7 @@ model Category {
   id          Int      @id @default(autoincrement())
   name        String   @db.VarChar(255)
   description String?  @db.Text
-  slug        String   @unique @db.VarChar(255)
+  slug        String   @unique @db.VarChar(191)
   createdAt   DateTime @default(now()) @map("createdAt")
   updatedAt   DateTime @updatedAt @map("updatedAt")
 

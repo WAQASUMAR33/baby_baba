@@ -51,9 +51,9 @@ export async function POST(request) {
     }
 
     // Prepare sale data
-    const saleData = {
+      const saleData = {
       subtotal: parseFloat(body.subtotal) || 0,
-      discount: parseFloat(body.discount) || 0,
+        discount: parseFloat(body.discount ?? body.globalDiscount ?? 0) || 0,
       total: parseFloat(body.total) || 0,
       paymentMethod: body.paymentMethod || 'cash',
       amountReceived: parseFloat(body.amountReceived) || 0,
@@ -69,6 +69,7 @@ export async function POST(request) {
         price: parseFloat(item.price),
         originalPrice: parseFloat(item.originalPrice || 0),
         quantity: parseInt(item.quantity),
+          discount: parseFloat(item.discount || 0),
         sku: item.sku || null,
         image: item.image || null,
       }))
@@ -269,4 +270,3 @@ export async function GET(request) {
     )
   }
 }
-

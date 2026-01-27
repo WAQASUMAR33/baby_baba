@@ -1,9 +1,62 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { useSession } from "next-auth/react"
 
 export default function DashboardPage() {
   const { data: session } = useSession()
+  const [stats, setStats] = useState({
+    totalOrders: 0,
+    totalRevenue: 0,
+    totalCustomers: 0,
+    totalProducts: 0,
+  })
+  const [loadingStats, setLoadingStats] = useState(true)
+
+  useEffect(() => {
+    let isActive = true
+    const loadStats = async () => {
+      try {
+        const [salesRes, customersRes, productsRes] = await Promise.all([
+          fetch("/api/sales?limit=1&offset=0"),
+          fetch("/api/customers"),
+          fetch("/api/products?limit=1"),
+        ])
+        const salesData = salesRes.ok ? await salesRes.json() : null
+        const customersData = customersRes.ok ? await customersRes.json() : null
+        const productsData = productsRes.ok ? await productsRes.json() : null
+
+        if (!isActive) return
+
+        setStats({
+          totalOrders: salesData?.stats?.totalSales || 0,
+          totalRevenue: salesData?.stats?.totalRevenue || 0,
+          totalCustomers: customersData?.stats?.totalCustomers || 0,
+          totalProducts: productsData?.total || 0,
+        })
+      } catch (error) {
+        if (!isActive) return
+        setStats({
+          totalOrders: 0,
+          totalRevenue: 0,
+          totalCustomers: 0,
+          totalProducts: 0,
+        })
+      } finally {
+        if (isActive) {
+          setLoadingStats(false)
+        }
+      }
+    }
+    loadStats()
+    return () => {
+      isActive = false
+    }
+  }, [])
+
+  const formatCurrency = (amount) => {
+    return `Rs ${Number(amount || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
 
   return (
     <div className="p-6 lg:p-8">
@@ -32,7 +85,9 @@ export default function DashboardPage() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="text-sm font-medium text-gray-500 truncate">Total Orders</dt>
-                  <dd className="text-lg font-semibold text-gray-900">0</dd>
+                  <dd className="text-lg font-semibold text-gray-900">
+                    {loadingStats ? "--" : stats.totalOrders}
+                  </dd>
                 </dl>
               </div>
             </div>
@@ -52,7 +107,9 @@ export default function DashboardPage() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="text-sm font-medium text-gray-500 truncate">Revenue</dt>
-                  <dd className="text-lg font-semibold text-gray-900">Rs 0.00</dd>
+                  <dd className="text-lg font-semibold text-gray-900">
+                    {loadingStats ? "--" : formatCurrency(stats.totalRevenue)}
+                  </dd>
                 </dl>
               </div>
             </div>
@@ -72,7 +129,9 @@ export default function DashboardPage() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="text-sm font-medium text-gray-500 truncate">Customers</dt>
-                  <dd className="text-lg font-semibold text-gray-900">0</dd>
+                  <dd className="text-lg font-semibold text-gray-900">
+                    {loadingStats ? "--" : stats.totalCustomers}
+                  </dd>
                 </dl>
               </div>
             </div>
@@ -92,7 +151,9 @@ export default function DashboardPage() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="text-sm font-medium text-gray-500 truncate">Products</dt>
-                  <dd className="text-lg font-semibold text-gray-900">0</dd>
+                  <dd className="text-lg font-semibold text-gray-900">
+                    {loadingStats ? "--" : stats.totalProducts}
+                  </dd>
                 </dl>
               </div>
             </div>
@@ -124,4 +185,3 @@ export default function DashboardPage() {
     </div>
   )
 }
-

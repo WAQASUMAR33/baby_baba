@@ -25,6 +25,9 @@ export async function PATCH(request, { params }) {
         if (body.password) {
             updateData.password = await bcrypt.hash(body.password, 10)
         }
+        if (body.modules !== undefined) {
+            updateData.modules = Array.isArray(body.modules) ? body.modules : []
+        }
 
         const updatedUser = await updateUser(id, updateData)
         return NextResponse.json({ success: true, user: updatedUser })

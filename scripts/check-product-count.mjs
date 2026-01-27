@@ -14,8 +14,8 @@ async function checkCount() {
 
     const connection = await mysql.createConnection(config)
     try {
-        const [products] = await connection.execute('SELECT COUNT(*) as count FROM Product')
-        const [variants] = await connection.execute('SELECT COUNT(*) as count FROM ProductVariant')
+        const [products] = await connection.execute('SELECT COUNT(*) as count FROM product')
+        const [variants] = await connection.execute('SELECT COUNT(*) as count FROM productvariant')
         console.log(`📊 Products in DB: ${products[0].count}`)
         console.log(`📊 Variants in DB: ${variants[0].count}`)
     } catch (error) {

@@ -44,10 +44,12 @@ export async function POST(request) {
 
         // Hash password
         const hashedPassword = await bcrypt.hash(body.password, 10)
+        const modules = Array.isArray(body.modules) ? body.modules : []
 
         const user = await createUser({
             ...body,
-            password: hashedPassword
+            password: hashedPassword,
+            modules
         })
 
         return NextResponse.json({ success: true, user }, { status: 201 })

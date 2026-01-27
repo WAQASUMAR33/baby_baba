@@ -4,11 +4,11 @@ import mysql from 'mysql2/promise';
 // Parse DATABASE_URL
 const parseDatabaseUrl = (url) => {
     if (!url) throw new Error('DATABASE_URL not defined');
-    const match = url.match(/mysql:\/\/([^:]+)(?::([^@]*))?@([^:]+):(\d+)\/(.+)/);
+    const match = url.match(/^mysql:\/\/([^:@/]+)(?::([^@/]*))?@([^:/]+)(?::(\d+))?\/(.+)$/);
     if (!match) throw new Error('Invalid DATABASE_URL format');
     return {
         host: match[3],
-        port: parseInt(match[4]),
+        port: match[4] ? parseInt(match[4]) : 3306,
         user: match[1],
         password: match[2] || '',
         database: match[5],
@@ -37,8 +37,9 @@ export async function GET(request) {
         const vendor = searchParams.get('vendor') || 'all';
         const sortBy = searchParams.get('sortBy') || 'name';
         const limitParam = searchParams.get('limit');
-        const limit = limitParam && limitParam !== 'all' ? parseInt(limitParam) : 10000;
-        const applyLimit = limitParam !== 'all';
+        const parsedLimit = Number.parseInt(limitParam ?? '', 10);
+        const applyLimit = limitParam !== 'all' && Number.isFinite(parsedLimit) && parsedLimit > 0;
+        const limit = applyLimit ? parsedLimit : null;
 
         const pool = getPool();
 
@@ -48,27 +49,31 @@ export async function GET(request) {
              c.name as categoryName,
              v.id as variant_id, v.title as variant_title, v.price, v.compare_at_price, 
              v.sku, v.barcode, v.inventory_quantity, v.weight, v.weight_unit
-      FROM Product p
-      LEFT JOIN ProductVariant v ON p.id = v.productId
-      LEFT JOIN Category c ON p.categoryId = c.id
-      WHERE 1=1
+      FROM product p
+      LEFT JOIN productvariant v ON p.id = v.productId
+      LEFT JOIN category c ON p.categoryId = c.id
     `;
         const params = [];
+        const conditions = [];
 
         if (search) {
-            query += ` AND (p.title LIKE ? OR p.vendor LIKE ? OR v.sku LIKE ? OR v.barcode LIKE ?)`;
+            conditions.push(`(p.title LIKE ? OR p.vendor LIKE ? OR v.sku LIKE ? OR v.barcode LIKE ?)`);
             const searchParam = `%${search}%`;
             params.push(searchParam, searchParam, searchParam, searchParam);
         }
 
         if (status !== 'all') {
-            query += ` AND p.status = ?`;
+            conditions.push(`p.status = ?`);
             params.push(status);
         }
 
         if (vendor !== 'all') {
-            query += ` AND p.vendor = ?`;
+            conditions.push(`p.vendor = ?`);
             params.push(vendor);
+        }
+
+        if (conditions.length > 0) {
+            query += ` WHERE ${conditions.join(' AND ')}`
         }
 
         // Sorting logic - simplified for SQL
@@ -83,11 +88,22 @@ export async function GET(request) {
         }
 
         if (applyLimit) {
-            query += ` LIMIT ?`;
-            params.push(limit);
+            query += ` LIMIT ${limit}`;
         }
 
         const [rows] = await pool.execute(query, params);
+
+        let countQuery = `
+      SELECT COUNT(DISTINCT p.id) as total
+      FROM product p
+      LEFT JOIN productvariant v ON p.id = v.productId
+      LEFT JOIN category c ON p.categoryId = c.id
+    `
+        if (conditions.length > 0) {
+            countQuery += ` WHERE ${conditions.join(' AND ')}`
+        }
+        const [countRows] = await pool.execute(countQuery, params)
+        const total = countRows?.[0]?.total || 0
 
         // Group rows by product (since LEFT JOIN returns multiple rows for variants)
         const productMap = new Map();
@@ -127,7 +143,8 @@ export async function GET(request) {
 
         return NextResponse.json({
             success: true,
-            products: Array.from(productMap.values())
+            products: Array.from(productMap.values()),
+            total
         });
     } catch (error) {
         console.error('API Error:', error);
@@ -158,7 +175,7 @@ export async function POST(request) {
 
         while (handleExists) {
             const [existingProducts] = await pool.execute(
-                'SELECT id FROM Product WHERE handle = ?',
+                'SELECT id FROM product WHERE handle = ?',
                 [handle]
             );
 
@@ -172,7 +189,7 @@ export async function POST(request) {
 
         // Insert product
         await pool.execute(
-            `INSERT INTO Product (id, title, description, vendor, product_type, status, image, handle, 
+            `INSERT INTO product (id, title, description, vendor, product_type, status, image, handle, 
              sale_price, original_price, cost_price, quantity, categoryId, createdAt, updatedAt) 
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
             [
@@ -195,7 +212,7 @@ export async function POST(request) {
         // Insert variant (every product needs at least one variant)
         const variantId = body.variant_id || `${productId}-variant-1`;
         await pool.execute(
-            `INSERT INTO ProductVariant (id, productId, title, price, compare_at_price, sku, barcode, 
+            `INSERT INTO productvariant (id, productId, title, price, compare_at_price, sku, barcode, 
              inventory_quantity, weight, weight_unit, createdAt, updatedAt) 
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
             [

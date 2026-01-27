@@ -64,7 +64,7 @@ export async function upsertProduct(product) {
     ]
 
     await conn.execute(
-      `INSERT INTO Product (id, title, description, vendor, product_type, status, image, handle, sale_price, cost_price, quantity, updatedAt)
+      `INSERT INTO product (id, title, description, vendor, product_type, status, image, handle, sale_price, cost_price, quantity, updatedAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
        ON DUPLICATE KEY UPDATE
        title = VALUES(title),
@@ -81,7 +81,7 @@ export async function upsertProduct(product) {
     )
 
     // Delete existing variants for this product to sync
-    await conn.execute('DELETE FROM ProductVariant WHERE productId = ?', [String(product.id)])
+    await conn.execute('DELETE FROM productvariant WHERE productId = ?', [String(product.id)])
 
     // Insert new variants
     for (const variant of product.variants || []) {
@@ -99,7 +99,7 @@ export async function upsertProduct(product) {
       ]
 
       await conn.execute(
-        `INSERT INTO ProductVariant (id, productId, title, price, compare_at_price, sku, barcode, inventory_quantity, weight, weight_unit, updatedAt)
+        `INSERT INTO productvariant (id, productId, title, price, compare_at_price, sku, barcode, inventory_quantity, weight, weight_unit, updatedAt)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
         variantData
       )
@@ -121,8 +121,8 @@ export async function upsertProduct(product) {
 export async function clearProducts() {
   const connection = getPool()
   try {
-    await connection.execute('DELETE FROM ProductVariant')
-    await connection.execute('DELETE FROM Product')
+    await connection.execute('DELETE FROM productvariant')
+    await connection.execute('DELETE FROM product')
     console.log('✅ Cleared all products and variants from database')
   } catch (error) {
     console.error('❌ Error clearing products:', error)
@@ -137,7 +137,7 @@ export async function clearProducts() {
 export async function getLocalProductCount() {
   const connection = getPool()
   try {
-    const [rows] = await connection.execute('SELECT COUNT(*) as count FROM Product')
+    const [rows] = await connection.execute('SELECT COUNT(*) as count FROM product')
     return rows[0]?.count || 0
   } catch (error) {
     console.error('❌ Error getting product count:', error)
@@ -154,7 +154,7 @@ export async function updateProductCategory(productId, categoryId) {
   const connection = getPool()
   try {
     await connection.execute(
-      'UPDATE Product SET categoryId = ?, updatedAt = NOW() WHERE id = ?',
+      'UPDATE product SET categoryId = ?, updatedAt = NOW() WHERE id = ?',
       [categoryId, String(productId)]
     )
     return { success: true }
@@ -172,7 +172,7 @@ export async function getProductById(id) {
   const connection = getPool()
   try {
     const [products] = await connection.execute(
-      'SELECT * FROM Product WHERE id = ? LIMIT 1',
+      'SELECT * FROM product WHERE id = ? LIMIT 1',
       [String(id)]
     )
 
@@ -181,7 +181,7 @@ export async function getProductById(id) {
     const product = products[0]
 
     const [variants] = await connection.execute(
-      'SELECT * FROM ProductVariant WHERE productId = ?',
+      'SELECT * FROM productvariant WHERE productId = ?',
       [String(id)]
     )
 
@@ -203,8 +203,8 @@ export async function deleteProduct(id) {
   try {
     await conn.beginTransaction()
 
-    await conn.execute('DELETE FROM ProductVariant WHERE productId = ?', [String(id)])
-    await conn.execute('DELETE FROM Product WHERE id = ?', [String(id)])
+    await conn.execute('DELETE FROM productvariant WHERE productId = ?', [String(id)])
+    await conn.execute('DELETE FROM product WHERE id = ?', [String(id)])
 
     await conn.commit()
     return { success: true }
@@ -244,7 +244,7 @@ export async function updateProduct(id, data) {
     if (updateFields.length > 0) {
       params.push(String(id))
       await conn.execute(
-        `UPDATE Product SET ${updateFields.join(', ')}, updatedAt = NOW() WHERE id = ?`,
+        `UPDATE product SET ${updateFields.join(', ')}, updatedAt = NOW() WHERE id = ?`,
         params
       )
     }
@@ -252,7 +252,7 @@ export async function updateProduct(id, data) {
     // Update main variant if barcode or prices are provided
     if (data.barcode !== undefined || data.sale_price !== undefined || data.original_price !== undefined) {
       // Find the first variant
-      const [variants] = await conn.execute('SELECT id FROM ProductVariant WHERE productId = ? LIMIT 1', [String(id)])
+      const [variants] = await conn.execute('SELECT id FROM productvariant WHERE productId = ? LIMIT 1', [String(id)])
       if (variants.length > 0) {
         const variantId = variants[0].id
         const vUpdateFields = []
@@ -265,7 +265,7 @@ export async function updateProduct(id, data) {
         if (vUpdateFields.length > 0) {
           vParams.push(variantId)
           await conn.execute(
-            `UPDATE ProductVariant SET ${vUpdateFields.join(', ')}, updatedAt = NOW() WHERE id = ?`,
+            `UPDATE productvariant SET ${vUpdateFields.join(', ')}, updatedAt = NOW() WHERE id = ?`,
             vParams
           )
         }

@@ -4,11 +4,11 @@ import mysql from 'mysql2/promise'
 // Parse DATABASE_URL
 const parseDatabaseUrl = (url) => {
     if (!url) throw new Error('DATABASE_URL not defined')
-    const match = url.match(/mysql:\/\/([^:]+)(?::([^@]*))?@([^:]+):(\d+)\/(.+)/)
+    const match = url.match(/^mysql:\/\/([^:@/]+)(?::([^@/]*))?@([^:/]+)(?::(\d+))?\/(.+)$/)
     if (!match) throw new Error('Invalid DATABASE_URL format')
     return {
         host: match[3],
-        port: parseInt(match[4]),
+        port: match[4] ? parseInt(match[4]) : 3306,
         user: match[1],
         password: match[2] || '',
         database: match[5],
@@ -39,7 +39,7 @@ export async function getCategories() {
     try {
         const connection = getPool()
         const [categories] = await connection.execute(
-            'SELECT c.*, COUNT(p.id) as productsCount FROM Category c LEFT JOIN Product p ON c.id = p.categoryId GROUP BY c.id ORDER BY c.name ASC'
+            'SELECT c.*, COUNT(p.id) as productsCount FROM category c LEFT JOIN product p ON c.id = p.categoryId GROUP BY c.id ORDER BY c.name ASC'
         )
         return categories
     } catch (error) {

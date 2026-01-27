@@ -17,6 +17,7 @@ const parseDatabaseUrl = (url) => {
 
 // Create connection pool
 let pool = null
+let hasSaleItemDiscountColumn = null
 
 function getPool() {
   if (!pool) {
@@ -33,6 +34,24 @@ function getPool() {
     console.log('✅ Sales DB pool created')
   }
   return pool
+}
+
+async function ensureSaleItemDiscountColumn(connection) {
+  if (hasSaleItemDiscountColumn !== null) return
+  try {
+    await connection.execute("ALTER TABLE `SaleItem` ADD COLUMN `discount` DECIMAL(10,2) DEFAULT 0")
+    hasSaleItemDiscountColumn = true
+  } catch (error) {
+    if (error?.code === 'ER_DUP_FIELDNAME') {
+      hasSaleItemDiscountColumn = true
+      return
+    }
+    if (error?.code === 'ER_NO_SUCH_TABLE') {
+      hasSaleItemDiscountColumn = false
+      return
+    }
+    throw error
+  }
 }
 
 export async function findUserByEmail(email) {
@@ -54,6 +73,7 @@ export async function createSale(saleData, userId) {
   const conn = await connection.getConnection()
 
   try {
+    await ensureSaleItemDiscountColumn(conn)
     await conn.beginTransaction()
 
     // Calculate total commission for the sale
@@ -102,11 +122,27 @@ export async function createSale(saleData, userId) {
     for (const item of itemsWithCommission) {
       // Some DBs may not yet have the `commission` column on SaleItem.
       // Try with commission first, then gracefully fallback without it.
-      try {
-        await conn.execute(
-          `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, commission, sku, image, createdAt)
+      const insertVariants = [
+        {
+          query: `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, discount, commission, sku, image, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          params: [
+            saleId,
+            String(item.productId),
+            String(item.variantId),
+            item.title,
+            item.price,
+            item.quantity,
+            parseFloat(item.discount || 0),
+            item.commission,
+            item.sku || null,
+            item.image || null,
+          ],
+        },
+        {
+          query: `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, commission, sku, image, createdAt)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-          [
+          params: [
             saleId,
             String(item.productId),
             String(item.variantId),
@@ -116,40 +152,66 @@ export async function createSale(saleData, userId) {
             item.commission,
             item.sku || null,
             item.image || null,
-          ]
-        )
-      } catch (insertErr) {
-        // Unknown column 'commission' in 'INSERT INTO'
-        if (insertErr?.code === 'ER_BAD_FIELD_ERROR' && String(insertErr?.message || '').includes("commission")) {
-          console.warn('⚠️ SaleItem.commission column missing in DB. Inserting SaleItem without commission. Run prisma db push to add it.')
-          await conn.execute(
-            `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, sku, image, createdAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-            [
-              saleId,
-              String(item.productId),
-              String(item.variantId),
-              item.title,
-              item.price,
-              item.quantity,
-              item.sku || null,
-              item.image || null,
-            ]
-          )
-        } else {
+          ],
+        },
+        {
+          query: `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, discount, sku, image, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          params: [
+            saleId,
+            String(item.productId),
+            String(item.variantId),
+            item.title,
+            item.price,
+            item.quantity,
+            parseFloat(item.discount || 0),
+            item.sku || null,
+            item.image || null,
+          ],
+        },
+        {
+          query: `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, sku, image, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          params: [
+            saleId,
+            String(item.productId),
+            String(item.variantId),
+            item.title,
+            item.price,
+            item.quantity,
+            item.sku || null,
+            item.image || null,
+          ],
+        },
+      ]
+
+      let inserted = false
+      for (const variant of insertVariants) {
+        try {
+          await conn.execute(variant.query, variant.params)
+          inserted = true
+          break
+        } catch (insertErr) {
+          if (insertErr?.code === 'ER_BAD_FIELD_ERROR') {
+            continue
+          }
           throw insertErr
         }
       }
 
+      if (!inserted) {
+        throw new Error('Failed to insert SaleItem with available columns')
+      }
+
       // Update local variant inventory
       await conn.execute(
-        `UPDATE ProductVariant SET inventory_quantity = inventory_quantity - ?, updatedAt = NOW() WHERE id = ?`,
+        `UPDATE productvariant SET inventory_quantity = inventory_quantity - ?, updatedAt = NOW() WHERE id = ?`,
         [item.quantity, String(item.variantId)]
       )
 
       // Update local product total quantity
       await conn.execute(
-        `UPDATE Product SET quantity = quantity - ?, updatedAt = NOW() WHERE id = ?`,
+        `UPDATE product SET quantity = quantity - ?, updatedAt = NOW() WHERE id = ?`,
         [item.quantity, String(item.productId)]
       )
     }
@@ -316,4 +378,3 @@ export default {
   createSale,
   getSales,
 }
-
