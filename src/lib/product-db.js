@@ -3,11 +3,11 @@ import mysql from 'mysql2/promise'
 // Parse DATABASE_URL
 const parseDatabaseUrl = (url) => {
   if (!url) throw new Error('DATABASE_URL not defined')
-  const match = url.match(/mysql:\/\/([^:]+)(?::([^@]*))?@([^:]+):(\d+)\/(.+)/)
+  const match = url.match(/^mysql:\/\/([^:@/]+)(?::([^@/]*))?@([^:/]+)(?::(\d+))?\/(.+)$/)
   if (!match) throw new Error('Invalid DATABASE_URL format')
   return {
     host: match[3],
-    port: parseInt(match[4]),
+    port: match[4] ? parseInt(match[4]) : 3306,
     user: match[1],
     password: match[2] || '',
     database: match[5],
@@ -20,7 +20,7 @@ let tableNamesCache = null
 
 function getPool() {
   if (!pool) {
-    const dbUrl = process.env.DATABASE_URL || 'mysql://root:@localhost:3306/mydb2'
+    const dbUrl = process.env.DATABASE_URL
     const config = parseDatabaseUrl(dbUrl)
     pool = mysql.createPool({
       ...config,

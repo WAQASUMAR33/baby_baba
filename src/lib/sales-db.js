@@ -4,11 +4,11 @@ import mysql from 'mysql2/promise'
 // Parse DATABASE_URL
 const parseDatabaseUrl = (url) => {
   if (!url) throw new Error('DATABASE_URL not defined')
-  const match = url.match(/mysql:\/\/([^:]+)(?::([^@]*))?@([^:]+):(\d+)\/(.+)/)
+  const match = url.match(/^mysql:\/\/([^:@/]+)(?::([^@/]*))?@([^:/]+)(?::(\d+))?\/(.+)$/)
   if (!match) throw new Error('Invalid DATABASE_URL format')
   return {
     host: match[3],
-    port: parseInt(match[4]),
+    port: match[4] ? parseInt(match[4]) : 3306,
     user: match[1],
     password: match[2] || '',
     database: match[5],
@@ -21,7 +21,7 @@ let hasSaleItemDiscountColumn = null
 
 function getPool() {
   if (!pool) {
-    const dbUrl = process.env.DATABASE_URL || 'mysql://root:@localhost:3306/mydb2'
+    const dbUrl = process.env.DATABASE_URL
     const config = parseDatabaseUrl(dbUrl)
     pool = mysql.createPool({
       ...config,
@@ -54,10 +54,35 @@ async function getProductTables() {
   }
   return productTablesCache
 }
+
+let salesTablesCache = null
+async function getSalesTables() {
+  if (salesTablesCache) return salesTablesCache
+  const connection = getPool()
+  const [rows] = await connection.query('SHOW TABLES')
+  const tableList = rows.map((r) => Object.values(r)[0])
+  const resolve = (candidates) => {
+    for (const name of candidates) {
+      if (tableList.includes(name)) return name
+    }
+    return null
+  }
+  salesTablesCache = {
+    sale: resolve(['Sale', 'sale', 'sales']),
+    saleitem: resolve(['SaleItem', 'saleitem', 'sale_item']),
+    user: resolve(['User', 'user', 'users'])
+  }
+  return salesTablesCache
+}
 async function ensureSaleItemDiscountColumn(connection) {
   if (hasSaleItemDiscountColumn !== null) return
   try {
-    await connection.execute("ALTER TABLE `SaleItem` ADD COLUMN `discount` DECIMAL(10,2) DEFAULT 0")
+    const { saleitem } = await getSalesTables()
+    if (!saleitem) {
+      hasSaleItemDiscountColumn = false
+      return
+    }
+    await connection.execute(`ALTER TABLE \`${saleitem}\` ADD COLUMN \`discount\` DECIMAL(10,2) DEFAULT 0`)
     hasSaleItemDiscountColumn = true
   } catch (error) {
     if (error?.code === 'ER_DUP_FIELDNAME') {
@@ -75,8 +100,10 @@ async function ensureSaleItemDiscountColumn(connection) {
 export async function findUserByEmail(email) {
   try {
     const connection = getPool()
+    const { user } = await getSalesTables()
+    if (!user) return null
     const [users] = await connection.execute(
-      'SELECT * FROM User WHERE email = ?',
+      `SELECT * FROM ${user} WHERE email = ?`,
       [email.trim().toLowerCase()]
     )
     return users.length > 0 ? users[0] : null
@@ -93,6 +120,11 @@ export async function createSale(saleData, userId) {
   try {
     await ensureSaleItemDiscountColumn(conn)
     await conn.beginTransaction()
+
+    const { sale, saleitem } = await getSalesTables()
+    if (!sale) {
+      throw new Error('Sale table not found in database')
+    }
 
     // Calculate total commission for the sale
     let totalCommission = 0;
@@ -116,7 +148,7 @@ export async function createSale(saleData, userId) {
 
     // Insert sale
     const [saleResult] = await conn.execute(
-      `INSERT INTO Sale (subtotal, discount, total, paymentMethod, amountReceived, \`change\`, customerName, status, commission, employeeId, employeeName, userId, createdAt, updatedAt)
+      `INSERT INTO ${sale} (subtotal, discount, total, paymentMethod, amountReceived, \`change\`, customerName, status, commission, employeeId, employeeName, userId, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         saleData.subtotal,
@@ -142,7 +174,7 @@ export async function createSale(saleData, userId) {
       // Try with commission first, then gracefully fallback without it.
       const insertVariants = [
         {
-          query: `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, discount, commission, sku, image, createdAt)
+          query: `INSERT INTO ${saleitem || 'SaleItem'} (saleId, productId, variantId, title, price, quantity, discount, commission, sku, image, createdAt)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           params: [
             saleId,
@@ -158,7 +190,7 @@ export async function createSale(saleData, userId) {
           ],
         },
         {
-          query: `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, commission, sku, image, createdAt)
+          query: `INSERT INTO ${saleitem || 'SaleItem'} (saleId, productId, variantId, title, price, quantity, commission, sku, image, createdAt)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           params: [
             saleId,
@@ -173,7 +205,7 @@ export async function createSale(saleData, userId) {
           ],
         },
         {
-          query: `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, discount, sku, image, createdAt)
+          query: `INSERT INTO ${saleitem || 'SaleItem'} (saleId, productId, variantId, title, price, quantity, discount, sku, image, createdAt)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           params: [
             saleId,
@@ -188,7 +220,7 @@ export async function createSale(saleData, userId) {
           ],
         },
         {
-          query: `INSERT INTO SaleItem (saleId, productId, variantId, title, price, quantity, sku, image, createdAt)
+          query: `INSERT INTO ${saleitem || 'SaleItem'} (saleId, productId, variantId, title, price, quantity, sku, image, createdAt)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           params: [
             saleId,
@@ -244,14 +276,18 @@ export async function createSale(saleData, userId) {
 
     // Fetch created sale with items
     const [sales] = await connection.execute(
-      `SELECT * FROM Sale WHERE id = ?`,
+      `SELECT * FROM ${sale} WHERE id = ?`,
       [saleId]
     )
 
-    const [items] = await connection.execute(
-      `SELECT * FROM SaleItem WHERE saleId = ?`,
-      [saleId]
-    )
+    let items = []
+    if (saleitem) {
+      const [rows] = await connection.execute(
+        `SELECT * FROM ${saleitem} WHERE saleId = ?`,
+        [saleId]
+      )
+      items = rows
+    }
 
     return {
       ...sales[0],
@@ -269,11 +305,24 @@ export async function createSale(saleData, userId) {
 export async function getSales(filters = {}) {
   try {
     const connection = getPool()
+    const { sale, user, saleitem } = await getSalesTables()
+    if (!sale) {
+      return {
+        sales: [],
+        total: 0,
+        stats: {
+          totalSales: 0,
+          totalRevenue: 0,
+          totalDiscount: 0,
+          totalCommission: 0,
+        }
+      }
+    }
 
     let query = `
       SELECT s.*, u.name as userName, u.email as userEmail
-      FROM Sale s
-      LEFT JOIN User u ON s.userId = u.id
+      FROM ${sale} s
+      LEFT JOIN ${user || 'User'} u ON s.userId = u.id
     `
     const params = []
     const conditions = []
@@ -318,15 +367,19 @@ export async function getSales(filters = {}) {
 
     // Fetch items for each sale
     for (const sale of sales) {
-      const [items] = await connection.execute(
-        'SELECT * FROM SaleItem WHERE saleId = ?',
-        [sale.id]
-      )
-      sale.items = items
+      if (saleitem) {
+        const [items] = await connection.execute(
+          `SELECT * FROM ${saleitem} WHERE saleId = ?`,
+          [sale.id]
+        )
+        sale.items = items
+      } else {
+        sale.items = []
+      }
     }
 
     // Get total count with same filters
-    let countQuery = 'SELECT COUNT(*) as count FROM Sale'
+    let countQuery = `SELECT COUNT(*) as count FROM ${sale}`
     const countParams = []
     const countConditions = []
 
@@ -364,7 +417,7 @@ export async function getSales(filters = {}) {
         SUM(total) as totalRevenue,
         SUM(discount) as totalDiscount,
         SUM(commission) as totalCommission
-       FROM Sale
+       FROM ${sale}
        WHERE status = 'completed'
     `
     const statsParams = []
