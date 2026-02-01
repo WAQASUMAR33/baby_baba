@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useSession } from "next-auth/react"
 import LoadingSpinner from "@/components/LoadingSpinner"
 
 export default function SalesPage() {
+  const { data: session } = useSession()
   const [sales, setSales] = useState([])
   const [posSales, setPosSales] = useState([])
   const [loading, setLoading] = useState(true)
@@ -12,6 +14,7 @@ export default function SalesPage() {
   const [selectedSale, setSelectedSale] = useState(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [stats, setStats] = useState({ totalSales: 0, totalRevenue: 0, totalDiscount: 0, totalCommission: 0 })
+  const isAdmin = session?.user?.role === 'admin'
 
   // Date filters
   const [startDate, setStartDate] = useState('')
@@ -622,74 +625,75 @@ export default function SalesPage() {
             )}
           </div>
 
-          {/* Sales Statistics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-blue-100 text-sm font-medium">Total Sales</p>
-                  <p className="text-3xl font-bold mt-2">{stats.totalSales || 0}</p>
-                  <p className="text-blue-100 text-xs mt-1">Completed transactions</p>
-                </div>
-                <div className="bg-blue-400 bg-opacity-30 rounded-full p-3">
-                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
+          {isAdmin && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-blue-100 text-sm font-medium">Total Sales</p>
+                    <p className="text-3xl font-bold mt-2">{stats.totalSales || 0}</p>
+                    <p className="text-blue-100 text-xs mt-1">Completed transactions</p>
+                  </div>
+                  <div className="bg-blue-400 bg-opacity-30 rounded-full p-3">
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-green-100 text-sm font-medium">Total Revenue</p>
-                  <p className="text-3xl font-bold mt-2">
-                    {formatCurrency(stats.totalRevenue || 0)}
-                  </p>
-                  <p className="text-green-100 text-xs mt-1">Gross income</p>
-                </div>
-                <div className="bg-green-400 bg-opacity-30 rounded-full p-3">
-                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+              <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-green-100 text-sm font-medium">Total Revenue</p>
+                    <p className="text-3xl font-bold mt-2">
+                      {formatCurrency(stats.totalRevenue || 0)}
+                    </p>
+                    <p className="text-green-100 text-xs mt-1">Gross income</p>
+                  </div>
+                  <div className="bg-green-400 bg-opacity-30 rounded-full p-3">
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg shadow-lg p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-yellow-100 text-sm font-medium">Total Discounts</p>
-                  <p className="text-3xl font-bold mt-2">
-                    {formatCurrency(stats.totalDiscount || 0)}
-                  </p>
-                  <p className="text-yellow-100 text-xs mt-1">Given to customers</p>
-                </div>
-                <div className="bg-yellow-400 bg-opacity-30 rounded-full p-3">
-                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                  </svg>
+              <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg shadow-lg p-6 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-yellow-100 text-sm font-medium">Total Discounts</p>
+                    <p className="text-3xl font-bold mt-2">
+                      {formatCurrency(stats.totalDiscount || 0)}
+                    </p>
+                    <p className="text-yellow-100 text-xs mt-1">Given to customers</p>
+                  </div>
+                  <div className="bg-yellow-400 bg-opacity-30 rounded-full p-3">
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                    </svg>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-purple-100 text-sm font-medium">Total Commission</p>
-                  <p className="text-3xl font-bold mt-2">
-                    {formatCurrency(stats.totalCommission || 0)}
-                  </p>
-                  <p className="text-purple-100 text-xs mt-1">Earnings for selected period</p>
-                </div>
-                <div className="bg-purple-400 bg-opacity-30 rounded-full p-3">
-                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+              <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-purple-100 text-sm font-medium">Total Commission</p>
+                    <p className="text-3xl font-bold mt-2">
+                      {formatCurrency(stats.totalCommission || 0)}
+                    </p>
+                    <p className="text-purple-100 text-xs mt-1">Earnings for selected period</p>
+                  </div>
+                  <div className="bg-purple-400 bg-opacity-30 rounded-full p-3">
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* POS Sales List */}
           {posSales.length === 0 ? (
