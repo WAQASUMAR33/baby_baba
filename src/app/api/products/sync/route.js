@@ -19,13 +19,21 @@ export async function POST(request) {
         const mode = searchParams.get('mode') || 'batch';
         const limit = parseInt(searchParams.get('limit') || '250');
         const pageInfo = searchParams.get('pageInfo');
+        const sinceIdParam = searchParams.get('sinceId');
+        const sinceId = sinceIdParam ? parseInt(sinceIdParam) : null;
 
         console.log(`🚀 Starting Shopify product sync - Mode: ${mode}, Batch Size: ${batchSize}, Offset: ${offset}, Full Sync: ${fullSync}`);
 
         if (mode === 'page') {
+            let resolvedSinceId = sinceId
+            if (!pageInfo && !resolvedSinceId) {
+                const { getLastLocalProductId } = await import('@/lib/product-db')
+                resolvedSinceId = await getLastLocalProductId()
+            }
             const result = await syncShopifyProductsPage({
                 limit,
-                pageInfo
+                pageInfo,
+                ...(resolvedSinceId ? { sinceId: resolvedSinceId } : {})
             });
             return NextResponse.json(result);
         }

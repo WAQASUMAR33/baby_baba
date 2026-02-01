@@ -141,13 +141,15 @@ export async function syncShopifyProductsPage(options = {}, onProgress = null) {
     const limit = Math.min(options.limit || 250, 250)
     const pageInfo = options.pageInfo || null
     const status = options.status
-    const order = options.order
+    const sinceId = options.sinceId
+    const order = options.order || (sinceId && !pageInfo ? 'id asc' : undefined)
 
     const { products, nextPageInfo, hasMore } = await getProductsPage({
         limit,
         pageInfo,
         status,
-        order
+        order,
+        ...(sinceId && !pageInfo ? { since_id: sinceId } : {})
     })
 
     if (products.length === 0) {

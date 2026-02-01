@@ -120,6 +120,16 @@ export default function SalesPage() {
     }
 
     // Generate receipt HTML
+    const paymentBreakdownItems = parsePaymentBreakdown(selectedSale.paymentBreakdown)
+    const paymentBreakdownHtml = paymentBreakdownItems.length > 0
+      ? paymentBreakdownItems.map(item => `
+            <div>
+              <span>${item.method || 'N/A'}:</span>
+              <span>${formatCurrency(item.amount || 0)}</span>
+            </div>
+          `).join('')
+      : ''
+
     const receiptHTML = `
       <!DOCTYPE html>
       <html>
@@ -381,6 +391,7 @@ export default function SalesPage() {
               <span>Amount Received:</span>
               <span>${formatCurrency(selectedSale.amountReceived || 0)}</span>
             </div>
+            ${paymentBreakdownHtml}
             ${parseFloat(selectedSale.change || 0) > 0 ? `
             <div style="font-weight: bold;">
               <span>Change:</span>
@@ -428,6 +439,20 @@ export default function SalesPage() {
   const formatCurrency = (amount) => {
     return `Rs ${parseFloat(amount).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
+
+  function parsePaymentBreakdown(breakdown) {
+    if (!breakdown) return []
+    if (Array.isArray(breakdown)) return breakdown
+    if (typeof breakdown !== 'string') return []
+    try {
+      const parsed = JSON.parse(breakdown)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+
+  const selectedSalePaymentBreakdown = parsePaymentBreakdown(selectedSale?.paymentBreakdown)
 
   const deleteSale = (id) => {
     if (confirm('Are you sure you want to delete this sale?')) {
@@ -1244,6 +1269,12 @@ export default function SalesPage() {
                       <span>Amount Received:</span>
                       <span>{formatCurrency(selectedSale?.amountReceived || 0)}</span>
                     </div>
+                    {selectedSalePaymentBreakdown.length > 0 && selectedSalePaymentBreakdown.map((item, index) => (
+                      <div key={`${item.method}-${index}`}>
+                        <span>{item.method || 'N/A'}:</span>
+                        <span>{formatCurrency(item.amount || 0)}</span>
+                      </div>
+                    ))}
                     {parseFloat(selectedSale?.change || 0) > 0 && (
                       <div style={{ fontWeight: 'bold' }}>
                         <span>Change:</span>
@@ -1316,6 +1347,12 @@ export default function SalesPage() {
                               <span className="text-gray-600">Amount Received:</span>
                               <span className="font-medium text-gray-900">{formatCurrency(selectedSale.amountReceived)}</span>
                             </div>
+                          {selectedSalePaymentBreakdown.length > 0 && selectedSalePaymentBreakdown.map((item, index) => (
+                            <div key={`${item.method}-${index}`} className="flex justify-between">
+                              <span className="text-gray-600">{item.method || 'N/A'}:</span>
+                              <span className="font-medium text-gray-900">{formatCurrency(item.amount || 0)}</span>
+                            </div>
+                          ))}
                             {parseFloat(selectedSale.change) > 0 && (
                               <div className="flex justify-between">
                                 <span className="text-gray-600">Change:</span>

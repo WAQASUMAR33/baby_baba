@@ -26,6 +26,7 @@ export default function EnhancedPOSPage() {
   // Payment States
   const [paymentMethod, setPaymentMethod] = useState("cash")
   const [amountReceived, setAmountReceived] = useState("")
+  const [splitPayments, setSplitPayments] = useState([])
   const [customerName, setCustomerName] = useState("")
   const [processingPayment, setProcessingPayment] = useState(false)
   const [lastSale, setLastSale] = useState(null)
@@ -222,10 +223,25 @@ export default function EnhancedPOSPage() {
   const globalDiscountAmount = parseFloat(globalDiscount) || 0
   const grandTotal = subtotal - globalDiscountAmount
   const change = amountReceived ? parseFloat(amountReceived) - grandTotal : 0
+  const splitTotal = splitPayments.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0)
+  const splitChange = splitTotal - grandTotal
+  const splitRemaining = grandTotal - splitTotal
 
   // Format currency
   const formatCurrency = (amount) => {
     return `Rs ${parseFloat(amount).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+
+  const parsePaymentBreakdown = (breakdown) => {
+    if (!breakdown) return []
+    if (Array.isArray(breakdown)) return breakdown
+    if (typeof breakdown !== 'string') return []
+    try {
+      const parsed = JSON.parse(breakdown)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
   }
 
   const printReceipt = (sale) => {
@@ -240,6 +256,16 @@ export default function EnhancedPOSPage() {
     }
 
     // Generate receipt HTML
+    const paymentBreakdownItems = parsePaymentBreakdown(sale.paymentBreakdown)
+    const paymentBreakdownHtml = paymentBreakdownItems.length > 0
+      ? paymentBreakdownItems.map(item => `
+            <div>
+              <span>${item.method || 'N/A'}:</span>
+              <span>${formatCurrency(item.amount || 0)}</span>
+            </div>
+          `).join('')
+      : ''
+
     const receiptHTML = `
       <!DOCTYPE html>
       <html>
@@ -487,6 +513,7 @@ export default function EnhancedPOSPage() {
               <span>Amount Received:</span>
               <span>${formatCurrency(sale.amountReceived || 0)}</span>
             </div>
+            ${paymentBreakdownHtml}
             ${parseFloat(sale.change || 0) > 0 ? `
             <div style="font-weight: bold;">
               <span>Change:</span>
@@ -548,9 +575,22 @@ export default function EnhancedPOSPage() {
       return
     }
 
+    if (paymentMethod === 'split' && splitTotal < grandTotal) {
+      toast.error('Split payments must cover the total amount')
+      return
+    }
+
     setProcessingPayment(true)
 
     try {
+      const normalizedSplitPayments = splitPayments
+        .map(payment => ({
+          method: payment.method,
+          amount: parseFloat(payment.amount) || 0,
+        }))
+        .filter(payment => payment.amount > 0)
+      const splitAmountReceived = normalizedSplitPayments.reduce((sum, payment) => sum + payment.amount, 0)
+      const isSplitPayment = paymentMethod === 'split'
       const saleData = {
         items: billItems.map(item => ({
           productId: item.productId,
@@ -566,8 +606,9 @@ export default function EnhancedPOSPage() {
         globalDiscount: globalDiscountAmount,
         total: grandTotal,
         paymentMethod,
-        amountReceived: paymentMethod === 'cash' ? parseFloat(amountReceived) : grandTotal,
-        change: paymentMethod === 'cash' ? change : 0,
+        paymentBreakdown: isSplitPayment ? normalizedSplitPayments : null,
+        amountReceived: paymentMethod === 'cash' ? parseFloat(amountReceived) : isSplitPayment ? splitAmountReceived : grandTotal,
+        change: paymentMethod === 'cash' ? change : isSplitPayment ? Math.max(0, splitAmountReceived - grandTotal) : 0,
         customerName: customerName.trim() || null,
         employeeId: selectedEmployee.id,
         employeeName: selectedEmployee.name,
@@ -638,6 +679,7 @@ export default function EnhancedPOSPage() {
       employee: selectedEmployee,
       paymentMethod,
       amountReceived,
+      splitPayments,
       globalDiscount
     }
 
@@ -650,6 +692,7 @@ export default function EnhancedPOSPage() {
     setCustomerName("")
     setGlobalDiscount(0)
     setAmountReceived("")
+    setSplitPayments([])
     setSelectedEmployee(null)
     setPaymentMethod("cash")
 
@@ -669,6 +712,7 @@ export default function EnhancedPOSPage() {
     setSelectedEmployee(sale.employee || null)
     setPaymentMethod(sale.paymentMethod || "cash")
     setAmountReceived(sale.amountReceived || "")
+    setSplitPayments(sale.splitPayments || [])
     setGlobalDiscount(sale.globalDiscount || 0)
 
     // Remove from held list
@@ -1059,9 +1103,12 @@ export default function EnhancedPOSPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Payment Method
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
-                  onClick={() => setPaymentMethod('cash')}
+                  onClick={() => {
+                    setPaymentMethod('cash')
+                    setSplitPayments([])
+                  }}
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${paymentMethod === 'cash'
                     ? 'bg-indigo-600 text-white'
                     : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
@@ -1070,13 +1117,33 @@ export default function EnhancedPOSPage() {
                   Cash
                 </button>
                 <button
-                  onClick={() => setPaymentMethod('card')}
+                  onClick={() => {
+                    setPaymentMethod('card')
+                    setSplitPayments([])
+                  }}
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${paymentMethod === 'card'
                     ? 'bg-indigo-600 text-white'
                     : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                     }`}
                 >
                   Card
+                </button>
+                <button
+                  onClick={() => {
+                    setPaymentMethod('split')
+                    if (splitPayments.length === 0) {
+                      setSplitPayments([
+                        { method: 'cash', amount: '' },
+                        { method: 'bank', amount: '' },
+                      ])
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${paymentMethod === 'split'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                >
+                  Split
                 </button>
               </div>
             </div>
@@ -1107,6 +1174,78 @@ export default function EnhancedPOSPage() {
                     ⚠️ Amount received is less than total
                   </p>
                 )}
+              </div>
+            )}
+
+            {paymentMethod === 'split' && (
+              <div className="mb-4">
+                <div className="space-y-2">
+                  {splitPayments.map((payment, index) => (
+                    <div key={`${payment.method}-${index}`} className="flex items-center gap-2">
+                      <select
+                        value={payment.method}
+                        onChange={(e) => {
+                          const updated = [...splitPayments]
+                          updated[index] = { ...updated[index], method: e.target.value }
+                          setSplitPayments(updated)
+                        }}
+                        className="w-28 px-2 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="cash">Cash</option>
+                        <option value="card">Card</option>
+                        <option value="bank">Bank</option>
+                      </select>
+                      <input
+                        type="number"
+                        value={payment.amount}
+                        onChange={(e) => {
+                          const updated = [...splitPayments]
+                          updated[index] = { ...updated[index], amount: e.target.value }
+                          setSplitPayments(updated)
+                        }}
+                        placeholder="0.00"
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        step="0.01"
+                        min="0"
+                      />
+                      <button
+                        onClick={() => {
+                          const updated = splitPayments.filter((_, i) => i !== index)
+                          setSplitPayments(updated)
+                        }}
+                        className="px-3 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-100"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setSplitPayments([...splitPayments, { method: 'cash', amount: '' }])}
+                  className="mt-3 w-full px-4 py-2 border border-indigo-300 text-indigo-700 rounded-lg hover:bg-indigo-50 font-medium"
+                >
+                  Add Payment
+                </button>
+                <div className="mt-3 space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Paid:</span>
+                    <span className="font-semibold">{splitTotal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Remaining:</span>
+                    <span className={`font-semibold ${splitRemaining <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {splitRemaining.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  {splitChange > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Change:</span>
+                      <span className="font-semibold text-green-600">
+                        {splitChange.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1150,6 +1289,7 @@ export default function EnhancedPOSPage() {
                   setCustomerName("")
                   setAmountReceived("")
                   setSelectedEmployee(null)
+                  setSplitPayments([])
                 }}
                 className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
               >

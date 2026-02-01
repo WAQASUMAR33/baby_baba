@@ -18,6 +18,7 @@ const parseDatabaseUrl = (url) => {
 // Create connection pool
 let pool = null
 let hasSaleItemDiscountColumn = null
+let hasSalePaymentBreakdownColumn = null
 
 function getPool() {
   if (!pool) {
@@ -97,6 +98,29 @@ async function ensureSaleItemDiscountColumn(connection) {
   }
 }
 
+async function ensureSalePaymentBreakdownColumn(connection) {
+  if (hasSalePaymentBreakdownColumn !== null) return
+  try {
+    const { sale } = await getSalesTables()
+    if (!sale) {
+      hasSalePaymentBreakdownColumn = false
+      return
+    }
+    await connection.execute(`ALTER TABLE \`${sale}\` ADD COLUMN \`paymentBreakdown\` TEXT NULL`)
+    hasSalePaymentBreakdownColumn = true
+  } catch (error) {
+    if (error?.code === 'ER_DUP_FIELDNAME') {
+      hasSalePaymentBreakdownColumn = true
+      return
+    }
+    if (error?.code === 'ER_NO_SUCH_TABLE') {
+      hasSalePaymentBreakdownColumn = false
+      return
+    }
+    throw error
+  }
+}
+
 export async function findUserByEmail(email) {
   try {
     const connection = getPool()
@@ -119,6 +143,7 @@ export async function createSale(saleData, userId) {
 
   try {
     await ensureSaleItemDiscountColumn(conn)
+    await ensureSalePaymentBreakdownColumn(conn)
     await conn.beginTransaction()
 
     const { sale, saleitem } = await getSalesTables()
@@ -147,24 +172,63 @@ export async function createSale(saleData, userId) {
     });
 
     // Insert sale
-    const [saleResult] = await conn.execute(
-      `INSERT INTO ${sale} (subtotal, discount, total, paymentMethod, amountReceived, \`change\`, customerName, status, commission, employeeId, employeeName, userId, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-      [
-        saleData.subtotal,
-        saleData.discount,
-        saleData.total,
-        saleData.paymentMethod,
-        saleData.amountReceived,
-        saleData.change,
-        saleData.customerName,
-        saleData.status,
-        totalCommission,
-        saleData.employeeId,
-        saleData.employeeName,
-        userId,
-      ]
-    )
+    const saleInsertVariants = [
+      {
+        query: `INSERT INTO ${sale} (subtotal, discount, total, paymentMethod, paymentBreakdown, amountReceived, \`change\`, customerName, status, commission, employeeId, employeeName, userId, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        params: [
+          saleData.subtotal,
+          saleData.discount,
+          saleData.total,
+          saleData.paymentMethod,
+          saleData.paymentBreakdown,
+          saleData.amountReceived,
+          saleData.change,
+          saleData.customerName,
+          saleData.status,
+          totalCommission,
+          saleData.employeeId,
+          saleData.employeeName,
+          userId,
+        ],
+      },
+      {
+        query: `INSERT INTO ${sale} (subtotal, discount, total, paymentMethod, amountReceived, \`change\`, customerName, status, commission, employeeId, employeeName, userId, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        params: [
+          saleData.subtotal,
+          saleData.discount,
+          saleData.total,
+          saleData.paymentMethod,
+          saleData.amountReceived,
+          saleData.change,
+          saleData.customerName,
+          saleData.status,
+          totalCommission,
+          saleData.employeeId,
+          saleData.employeeName,
+          userId,
+        ],
+      },
+    ]
+
+    let saleResult = null
+    for (const variant of saleInsertVariants) {
+      try {
+        const [result] = await conn.execute(variant.query, variant.params)
+        saleResult = result
+        break
+      } catch (insertErr) {
+        if (insertErr?.code === 'ER_BAD_FIELD_ERROR') {
+          continue
+        }
+        throw insertErr
+      }
+    }
+
+    if (!saleResult) {
+      throw new Error('Failed to insert Sale with available columns')
+    }
 
     const saleId = saleResult.insertId
 

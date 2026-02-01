@@ -50,12 +50,16 @@ export async function POST(request) {
       )
     }
 
-    // Prepare sale data
-      const saleData = {
+    const paymentBreakdown = Array.isArray(body.paymentBreakdown)
+      ? JSON.stringify(body.paymentBreakdown)
+      : (typeof body.paymentBreakdown === 'string' ? body.paymentBreakdown : null)
+
+    const saleData = {
       subtotal: parseFloat(body.subtotal) || 0,
         discount: parseFloat(body.discount ?? body.globalDiscount ?? 0) || 0,
       total: parseFloat(body.total) || 0,
       paymentMethod: body.paymentMethod || 'cash',
+      paymentBreakdown,
       amountReceived: parseFloat(body.amountReceived) || 0,
       change: parseFloat(body.change) || 0,
       customerName: body.customerName || null,

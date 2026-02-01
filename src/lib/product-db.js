@@ -167,6 +167,21 @@ export async function getLocalProductCount() {
   }
 }
 
+export async function getLastLocalProductId() {
+  const connection = getPool()
+  try {
+    const { product: productTable } = await getTableNames()
+    const [rows] = await connection.execute(
+      `SELECT MAX(CAST(id AS UNSIGNED)) as maxId FROM ${productTable}`
+    )
+    const maxId = rows[0]?.maxId
+    return maxId ? parseInt(maxId) : 0
+  } catch (error) {
+    console.error('❌ Error getting last product id:', error)
+    return 0
+  }
+}
+
 /**
  * Update the category of a product
  * @param {string} productId 
