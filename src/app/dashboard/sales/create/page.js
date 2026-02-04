@@ -860,7 +860,7 @@ export default function EnhancedPOSPage() {
                   <div className="p-4 text-center text-gray-500">No products found</div>
                 ) : (
                   <div className="divide-y divide-gray-200">
-                    {rankedProducts.slice(0, 200).map((product) => {
+                    {rankedProducts.map((product) => {
                       const variant = product.variants?.[0]
                       const stock = parseInt(variant?.inventory_quantity || 0)
                       const isOutOfStock = stock <= 0

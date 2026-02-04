@@ -67,70 +67,106 @@ export async function GET(request) {
         const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
 
         const pool = getPool();
-        const { product, productvariant, category } = await getTableNames();
+        const { product, productvariant } = await getTableNames();
 
-        let query = `
+        const baseSelect = `
       SELECT p.id, p.title, p.vendor, p.product_type, p.status, p.handle, p.updatedAt,
              p.original_price, p.sale_price, p.quantity, p.categoryId,
-             c.name as categoryName,
              v.id as variant_id, v.title as variant_title, v.price, v.compare_at_price, 
              v.sku, v.barcode, v.inventory_quantity, v.weight, v.weight_unit
       FROM ${product} p
       LEFT JOIN ${productvariant} v ON p.id = v.productId
-      LEFT JOIN ${category} c ON p.categoryId = c.id
     `;
-        const params = [];
+        const filterParams = [];
         const conditions = [];
 
         if (search) {
             conditions.push(`(p.title LIKE ? OR p.vendor LIKE ? OR v.sku LIKE ? OR v.barcode LIKE ?)`);
             const searchParam = `%${search}%`;
-            params.push(searchParam, searchParam, searchParam, searchParam);
+            filterParams.push(searchParam, searchParam, searchParam, searchParam);
         }
 
         if (status !== 'all') {
             conditions.push(`p.status = ?`);
-            params.push(status);
+            filterParams.push(status);
         }
 
         if (vendor !== 'all') {
             conditions.push(`p.vendor = ?`);
-            params.push(vendor);
+            filterParams.push(vendor);
         }
 
-        if (conditions.length > 0) {
-            query += ` WHERE ${conditions.join(' AND ')}`
-        }
+        const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
 
-        // Sorting logic - simplified for SQL
-        switch (sortBy) {
-            case 'name': query += ` ORDER BY p.title ASC`; break;
-            case 'name-desc': query += ` ORDER BY p.title DESC`; break;
-            case 'price-low': query += ` ORDER BY p.sale_price ASC`; break;
-            case 'price-high': query += ` ORDER BY p.sale_price DESC`; break;
-            case 'stock-low': query += ` ORDER BY v.inventory_quantity ASC`; break;
-            case 'stock-high': query += ` ORDER BY v.inventory_quantity DESC`; break;
-            default: query += ` ORDER BY p.updatedAt DESC`;
-        }
+        const orderByClause = (() => {
+            switch (sortBy) {
+                case 'name': return ` ORDER BY p.title ASC`;
+                case 'name-desc': return ` ORDER BY p.title DESC`;
+                case 'price-low': return ` ORDER BY p.sale_price ASC`;
+                case 'price-high': return ` ORDER BY p.sale_price DESC`;
+                case 'stock-low': return ` ORDER BY v.inventory_quantity ASC`;
+                case 'stock-high': return ` ORDER BY v.inventory_quantity DESC`;
+                default: return ` ORDER BY p.updatedAt DESC`;
+            }
+        })();
 
-        if (applyLimit) {
-            query += ` LIMIT ? OFFSET ?`;
-            params.push(limit, offset);
-        }
-
-        const [rows] = await pool.execute(query, params);
+        const idOrderByClause = (() => {
+            switch (sortBy) {
+                case 'name': return ` ORDER BY p.title ASC`;
+                case 'name-desc': return ` ORDER BY p.title DESC`;
+                case 'price-low': return ` ORDER BY p.sale_price ASC`;
+                case 'price-high': return ` ORDER BY p.sale_price DESC`;
+                case 'stock-low': return ` ORDER BY stock_total ASC`;
+                case 'stock-high': return ` ORDER BY stock_total DESC`;
+                default: return ` ORDER BY p.updatedAt DESC`;
+            }
+        })();
 
         let countQuery = `
       SELECT COUNT(DISTINCT p.id) as total
       FROM ${product} p
       LEFT JOIN ${productvariant} v ON p.id = v.productId
-      LEFT JOIN ${category} c ON p.categoryId = c.id
-    `
-        if (conditions.length > 0) {
-            countQuery += ` WHERE ${conditions.join(' AND ')}`
-        }
-        const [countRows] = await pool.execute(countQuery, params)
+    ${whereClause}`
+        const [countRows] = await pool.execute(countQuery, filterParams)
         const total = countRows?.[0]?.total || 0
+
+        let rows = [];
+        if (applyLimit) {
+            const idQuery = `
+        SELECT p.id, SUM(COALESCE(v.inventory_quantity, 0)) as stock_total
+        FROM ${product} p
+        LEFT JOIN ${productvariant} v ON p.id = v.productId
+        ${whereClause}
+        GROUP BY p.id
+        ${idOrderByClause}
+        LIMIT ? OFFSET ?
+      `;
+            const [idRows] = await pool.execute(idQuery, [...filterParams, limit, offset]);
+            const ids = idRows.map((row) => row.id);
+
+            if (ids.length === 0) {
+                return NextResponse.json({
+                    success: true,
+                    products: [],
+                    total,
+                    limit,
+                    offset
+                });
+            }
+
+            const placeholders = ids.map(() => '?').join(',');
+            const detailQuery = `
+        ${baseSelect}
+        WHERE p.id IN (${placeholders})
+        ORDER BY FIELD(p.id, ${placeholders})
+      `;
+            const [detailRows] = await pool.execute(detailQuery, [...ids, ...ids]);
+            rows = detailRows;
+        } else {
+            const query = `${baseSelect}${whereClause}${orderByClause}`;
+            const [detailRows] = await pool.execute(query, filterParams);
+            rows = detailRows;
+        }
 
         // Group rows by product (since LEFT JOIN returns multiple rows for variants)
         const productMap = new Map();
@@ -147,7 +183,6 @@ export async function GET(request) {
                     original_price: row.original_price,
                     quantity: row.quantity,
                     categoryId: row.categoryId,
-                    categoryName: row.categoryName,
                     updatedAt: row.updatedAt,
                     variants: []
                 });
