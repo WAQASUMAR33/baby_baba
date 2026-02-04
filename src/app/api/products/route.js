@@ -57,9 +57,14 @@ export async function GET(request) {
         const vendor = searchParams.get('vendor') || 'all';
         const sortBy = searchParams.get('sortBy') || 'name';
         const limitParam = searchParams.get('limit');
+        const offsetParam = searchParams.get('offset');
         const parsedLimit = Number.parseInt(limitParam ?? '', 10);
-        const applyLimit = limitParam !== 'all' && Number.isFinite(parsedLimit) && parsedLimit > 0;
-        const limit = applyLimit ? parsedLimit : null;
+        const parsedOffset = Number.parseInt(offsetParam ?? '', 10);
+        const hasLimitParam = limitParam !== null;
+        const isAll = limitParam === 'all';
+        const applyLimit = hasLimitParam && (isAll || (Number.isFinite(parsedLimit) && parsedLimit > 0));
+        const limit = isAll ? 1000 : parsedLimit;
+        const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
 
         const pool = getPool();
         const { product, productvariant, category } = await getTableNames();
@@ -109,7 +114,8 @@ export async function GET(request) {
         }
 
         if (applyLimit) {
-            query += ` LIMIT ${limit}`;
+            query += ` LIMIT ? OFFSET ?`;
+            params.push(limit, offset);
         }
 
         const [rows] = await pool.execute(query, params);
@@ -165,7 +171,9 @@ export async function GET(request) {
         return NextResponse.json({
             success: true,
             products: Array.from(productMap.values()),
-            total
+            total,
+            limit: applyLimit ? limit : null,
+            offset: applyLimit ? offset : 0
         });
     } catch (error) {
         console.error('API Error:', error);

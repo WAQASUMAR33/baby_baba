@@ -162,18 +162,39 @@ export default function ProductsPage() {
 
       console.log('🔄 Fetching products from Local Database...')
 
-      const response = await fetch(`/api/products?limit=all&sortBy=${sortBy}`, {
-        cache: 'no-store'
-      })
-      const data = await response.json()
+      const pageSize = 1000
+      let offset = 0
+      let allProducts = []
+      let total = null
+      let hasMore = true
 
-      if (data.success) {
-        console.log(`✅ Received ${data.products.length} products from local DB`)
-        setProducts(data.products)
-        setFilteredProducts(data.products)
-      } else {
-        setError(data.error || 'Failed to fetch products')
+      while (hasMore) {
+        const response = await fetch(`/api/products?limit=${pageSize}&offset=${offset}&sortBy=${sortBy}`, {
+          cache: 'no-store'
+        })
+        const data = await response.json()
+
+        if (!data.success) {
+          setError(data.error || 'Failed to fetch products')
+          return
+        }
+
+        const batch = data.products || []
+        allProducts = allProducts.concat(batch)
+        total = Number.isFinite(data.total) ? data.total : total
+
+        if (batch.length < pageSize) {
+          hasMore = false
+        } else if (total !== null && allProducts.length >= total) {
+          hasMore = false
+        } else {
+          offset += pageSize
+        }
       }
+
+      console.log(`✅ Received ${allProducts.length} products from local DB`)
+      setProducts(allProducts)
+      setFilteredProducts(allProducts)
     } catch (err) {
       console.error('❌ Error fetching products:', err)
       setError(err.message || 'An error occurred')

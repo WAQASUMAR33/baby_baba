@@ -39,11 +39,31 @@ export default function EnhancedPOSPage() {
   const fetchProducts = async () => {
     try {
       setLoadingProducts(true)
-      const response = await fetch('/api/products?limit=5000')
-      const data = await response.json()
-      if (data.success) {
-        setProducts(data.products || [])
+      const pageSize = 1000
+      let offset = 0
+      let allProducts = []
+      let total = null
+      let hasMore = true
+
+      while (hasMore) {
+        const response = await fetch(`/api/products?limit=${pageSize}&offset=${offset}`)
+        const data = await response.json()
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to fetch products')
+        }
+        const batch = data.products || []
+        allProducts = allProducts.concat(batch)
+        total = Number.isFinite(data.total) ? data.total : total
+        if (batch.length < pageSize) {
+          hasMore = false
+        } else if (total !== null && allProducts.length >= total) {
+          hasMore = false
+        } else {
+          offset += pageSize
+        }
       }
+
+      setProducts(allProducts)
     } catch (error) {
       console.error('Error fetching products:', error)
     } finally {
@@ -66,15 +86,49 @@ export default function EnhancedPOSPage() {
     }
   }
 
-  // Filter products based on search
-  const filteredProducts = products.filter(product =>
-    product.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.vendor?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (product.variants && product.variants.some(v =>
-      v.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.barcode?.toLowerCase().includes(searchTerm.toLowerCase())
-    ))
-  )
+  const normalizeText = (value) => {
+    if (value === null || value === undefined) return ''
+    return value
+      .toString()
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[\u2010-\u2015]/g, '-')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  const normalizedSearch = normalizeText(searchTerm)
+
+  const filteredProducts = normalizedSearch
+    ? products.filter(product => {
+      const title = normalizeText(product.title)
+      const vendor = normalizeText(product.vendor)
+      const variantMatch = Array.isArray(product.variants) && product.variants.some(v => {
+        const sku = normalizeText(v.sku)
+        const barcode = normalizeText(v.barcode)
+        return (sku && sku.includes(normalizedSearch)) || (barcode && barcode.includes(normalizedSearch))
+      })
+      return (title && title.includes(normalizedSearch)) || (vendor && vendor.includes(normalizedSearch)) || variantMatch
+    })
+    : products
+
+  const rankedProducts = normalizedSearch
+    ? filteredProducts.slice().sort((a, b) => {
+      const score = (product) => {
+        const title = normalizeText(product.title)
+        const vendor = normalizeText(product.vendor)
+        if (title === normalizedSearch) return 0
+        if (title.startsWith(normalizedSearch)) return 1
+        if (title.includes(normalizedSearch)) return 2
+        if (vendor.startsWith(normalizedSearch)) return 3
+        if (vendor.includes(normalizedSearch)) return 4
+        return 5
+      }
+      return score(a) - score(b)
+    })
+    : filteredProducts
 
   // Add product to bill
   const addProductToBill = () => {
@@ -806,7 +860,7 @@ export default function EnhancedPOSPage() {
                   <div className="p-4 text-center text-gray-500">No products found</div>
                 ) : (
                   <div className="divide-y divide-gray-200">
-                    {filteredProducts.slice(0, 50).map((product) => {
+                    {rankedProducts.slice(0, 200).map((product) => {
                       const variant = product.variants?.[0]
                       const stock = parseInt(variant?.inventory_quantity || 0)
                       const isOutOfStock = stock <= 0
