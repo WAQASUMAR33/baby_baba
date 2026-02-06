@@ -116,6 +116,7 @@ model Product {
   status            String   @default("active") @db.VarChar(50)
   image             String?  @db.VarChar(500)
   handle            String?  @unique @db.VarChar(191)
+  barcode           String?  @db.VarChar(255)
   salePrice         Decimal  @default(0) @db.Decimal(10, 2) @map("sale_price")
   originalPrice     Decimal  @default(0) @db.Decimal(10, 2) @map("original_price")
   costPrice         Decimal  @default(0) @db.Decimal(10, 2) @map("cost_price")

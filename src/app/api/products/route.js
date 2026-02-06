@@ -30,6 +30,7 @@ function getPool() {
 }
 
 let tableNamesCache = null;
+let hasProductBarcodeColumn = null;
 async function getTableNames() {
     if (tableNamesCache) return tableNamesCache;
     const pool = getPool();
@@ -49,6 +50,22 @@ async function getTableNames() {
     return tableNamesCache;
 }
 
+async function ensureProductBarcodeColumn() {
+    if (hasProductBarcodeColumn !== null) return;
+    const pool = getPool();
+    const { product } = await getTableNames();
+    try {
+        await pool.execute(`ALTER TABLE \`${product}\` ADD COLUMN \`barcode\` VARCHAR(255) NULL`);
+        hasProductBarcodeColumn = true;
+    } catch (error) {
+        if (error?.code === 'ER_DUP_FIELDNAME') {
+            hasProductBarcodeColumn = true;
+            return;
+        }
+        throw error;
+    }
+}
+
 export async function GET(request) {
     try {
         const { searchParams } = new URL(request.url);
@@ -56,6 +73,7 @@ export async function GET(request) {
         const status = searchParams.get('status') || 'all';
         const vendor = searchParams.get('vendor') || 'all';
         const sortBy = searchParams.get('sortBy') || 'name';
+        const joinCategory = (searchParams.get('joinCategory') || 'none').toLowerCase();
         const limitParam = searchParams.get('limit');
         const offsetParam = searchParams.get('offset');
         const parsedLimit = Number.parseInt(limitParam ?? '', 10);
@@ -67,23 +85,35 @@ export async function GET(request) {
         const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
 
         const pool = getPool();
-        const { product, productvariant } = await getTableNames();
+        const { product, productvariant, category } = await getTableNames();
+        await ensureProductBarcodeColumn();
 
-        const baseSelect = `
+        const baseSelect = (() => {
+            const categorySelect = `, ${joinCategory !== 'none' ? 'c.name as categoryName' : ''}`;
+            const categoryJoin =
+                joinCategory === 'inner'
+                    ? ` INNER JOIN ${category} c ON p.categoryId = c.id`
+                    : joinCategory === 'left'
+                        ? ` LEFT JOIN ${category} c ON p.categoryId = c.id`
+                        : '';
+            return `
       SELECT p.id, p.title, p.vendor, p.product_type, p.status, p.handle, p.updatedAt,
-             p.original_price, p.sale_price, p.quantity, p.categoryId,
+             p.original_price, p.sale_price, p.quantity, p.categoryId, p.barcode as product_barcode
+             ${categorySelect},
              v.id as variant_id, v.title as variant_title, v.price, v.compare_at_price, 
              v.sku, v.barcode, v.inventory_quantity, v.weight, v.weight_unit
       FROM ${product} p
+      ${categoryJoin}
       LEFT JOIN ${productvariant} v ON p.id = v.productId
     `;
+        })();
         const filterParams = [];
         const conditions = [];
 
         if (search) {
-            conditions.push(`(p.title LIKE ? OR p.vendor LIKE ? OR v.sku LIKE ? OR v.barcode LIKE ?)`);
+            conditions.push(`(p.title LIKE ? OR p.vendor LIKE ? OR p.barcode LIKE ? OR v.sku LIKE ? OR v.barcode LIKE ?)`);
             const searchParam = `%${search}%`;
-            filterParams.push(searchParam, searchParam, searchParam, searchParam);
+            filterParams.push(searchParam, searchParam, searchParam, searchParam, searchParam);
         }
 
         if (status !== 'all') {
@@ -125,8 +155,13 @@ export async function GET(request) {
         let countQuery = `
       SELECT COUNT(DISTINCT p.id) as total
       FROM ${product} p
+      ${joinCategory === 'inner'
+                ? ` INNER JOIN ${category} c ON p.categoryId = c.id`
+                : joinCategory === 'left'
+                    ? ` LEFT JOIN ${category} c ON p.categoryId = c.id`
+                    : ''}
       LEFT JOIN ${productvariant} v ON p.id = v.productId
-    ${whereClause}`
+    ${whereClause}`;
         const [countRows] = await pool.execute(countQuery, filterParams)
         const total = countRows?.[0]?.total || 0
 
@@ -135,6 +170,11 @@ export async function GET(request) {
             const idQuery = `
         SELECT p.id, SUM(COALESCE(v.inventory_quantity, 0)) as stock_total
         FROM ${product} p
+        ${joinCategory === 'inner'
+                    ? ` INNER JOIN ${category} c ON p.categoryId = c.id`
+                    : joinCategory === 'left'
+                        ? ` LEFT JOIN ${category} c ON p.categoryId = c.id`
+                        : ''}
         LEFT JOIN ${productvariant} v ON p.id = v.productId
         ${whereClause}
         GROUP BY p.id
@@ -183,6 +223,8 @@ export async function GET(request) {
                     original_price: row.original_price,
                     quantity: row.quantity,
                     categoryId: row.categoryId,
+                    categoryName: row.categoryName || null,
+                    barcode: row.product_barcode || null,
                     updatedAt: row.updatedAt,
                     variants: []
                 });
@@ -221,6 +263,7 @@ export async function POST(request) {
         const body = await request.json();
         const pool = getPool();
         const { product, productvariant } = await getTableNames();
+        await ensureProductBarcodeColumn();
 
         // Validate required fields
         if (!body.title) {
@@ -252,11 +295,13 @@ export async function POST(request) {
             }
         }
 
+        const productBarcode = body.productBarcode || body.barcode || null;
+
         // Insert product
         await pool.execute(
             `INSERT INTO ${product} (id, title, description, vendor, product_type, status, image, handle, 
-             sale_price, original_price, cost_price, quantity, categoryId, createdAt, updatedAt) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+             barcode, sale_price, original_price, cost_price, quantity, categoryId, createdAt, updatedAt) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
             [
                 productId,
                 body.title,
@@ -266,6 +311,7 @@ export async function POST(request) {
                 body.status || 'active',
                 body.image || null,
                 handle,
+                productBarcode,
                 parseFloat(body.salePrice || body.sale_price || body.price || 0),
                 parseFloat(body.originalPrice || body.original_price || body.compare_at_price || 0),
                 parseFloat(body.costPrice || body.cost_price || body.cost_per_item || 0),

@@ -281,8 +281,7 @@ export default function SalesPage() {
         <body>
           <!-- Header -->
           <div class="print-logo">
-            <img src="/babybazar.jpeg" alt="Baby Bazar Logo" style="height: 80px; margin-bottom: 8px;">
-            <h1 style="text-transform: uppercase;">Baby Bazar</h1>
+            <img src="/babybazar.jpeg" alt="Baby Bazar Logo" style="height: 50px; margin-bottom: 6px;">
             <p>Post Office Road Mandi Bahauddin</p>
             <p>Ph : 0347-943-2880</p>
           </div>
@@ -407,15 +406,13 @@ export default function SalesPage() {
 
           <!-- Footer -->
           <div class="print-footer">
-            <p style="margin: 4px 0; font-weight: bold;">Thank you for your purchase!</p>
-            <p style="margin: 4px 0;">we look forward to seeing you soon</p>
-            <p style="margin: 8px 0 0 0; font-size: 7pt;">Powered by RapidTechPro</p>
             <div style="margin-top: 8px; font-size: 7pt; text-align: left;">
-              <p style="margin: 4px 0; font-weight: bold;">Important Note:</p>
-              <p style="margin: 2px 0;">*Products will not be returned or exchanged without the original bill.</p>
-              <p style="margin: 2px 0;">Garments, Shoes, Hosiery Items, Feeding Items, Stuff Toys Can Be Returned Or Exchanged Within 4 Days.</p>
-              <p style="margin: 2px 0;">*All Electric Items, Small Toys, Prams, Wooden Cots, Wooden Cupboards, Wooden Beds, Cycles Will Not Be Returned Nor Exchanged.</p>
+              <p style="margin: 2px 0; font-weight: bold;">Important Note</p>
+              <p style="margin: 2px 0;">• Products will not be returned or exchanged without the original bill.</p>
+              <p style="margin: 2px 0;">• items can be exchanged within 3 days,</p>
+              <p style="margin: 2px 0;">• All Electric Items, Small Toys, Prams, Wooden Cots, Wooden Cupboards, Wooden Beds, Cycles Will Not Be Returned Nor Exchanged.</p>
             </div>
+            <p style="margin: 6px 0 0 0; text-align: center;">we look forward to seeing you soon</p>
           </div>
 
           <script>
@@ -1170,7 +1167,6 @@ export default function SalesPage() {
                 <div id="printable-receipt" style={{ display: 'none' }}>
                   {/* Header */}
                   <div className="print-logo">
-                    <h1>BABY BAZAR</h1>
                     <p>Point of Sale System</p>
                   </div>
 
@@ -1291,10 +1287,13 @@ export default function SalesPage() {
 
                   {/* Footer */}
                   <div className="print-footer">
-                    <p style={{ margin: '4px 0', fontWeight: 'bold' }}>Thank you for your purchase!</p>
-                    <p style={{ margin: '4px 0' }}>Visit us again soon</p>
-                    <p style={{ margin: '4px 0' }}>For queries: +92 XXX XXXXXXX</p>
-                    <p style={{ margin: '8px 0 0 0', fontSize: '7pt' }}>Powered by Baby Bazar POS</p>
+                    <div style={{ marginTop: '8px', fontSize: '7pt', textAlign: 'left' }}>
+                      <p style={{ margin: '2px 0', fontWeight: 'bold' }}>Important Note</p>
+                      <p style={{ margin: '2px 0' }}>• Products will not be returned or exchanged without the original bill.</p>
+                      <p style={{ margin: '2px 0' }}>• items can be exchanged within 3 days,</p>
+                      <p style={{ margin: '2px 0' }}>• All Electric Items, Small Toys, Prams, Wooden Cots, Wooden Cupboards, Wooden Beds, Cycles Will Not Be Returned Nor Exchanged.</p>
+                    </div>
+                    <p style={{ margin: '6px 0 0 0', textAlign: 'center' }}>we look forward to seeing you soon</p>
                   </div>
                 </div>
 

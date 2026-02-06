@@ -17,6 +17,7 @@ const parseDatabaseUrl = (url) => {
 // Create connection pool
 let pool = null
 let tableNamesCache = null
+let hasProductBarcodeColumn = null
 
 function getPool() {
   if (!pool) {
@@ -53,6 +54,21 @@ async function getTableNames() {
   return tableNamesCache
 }
 
+async function ensureProductBarcodeColumn(connection) {
+  if (hasProductBarcodeColumn !== null) return
+  const { product: productTable } = await getTableNames()
+  try {
+    await connection.execute(`ALTER TABLE \`${productTable}\` ADD COLUMN \`barcode\` VARCHAR(255) NULL`)
+    hasProductBarcodeColumn = true
+  } catch (error) {
+    if (error?.code === 'ER_DUP_FIELDNAME') {
+      hasProductBarcodeColumn = true
+      return
+    }
+    throw error
+  }
+}
+
 /**
  * Upsert a product and its variants into the local database
  * @param {object} product - Shopify product object
@@ -63,11 +79,13 @@ export async function upsertProduct(product) {
 
   try {
     await conn.beginTransaction()
+    await ensureProductBarcodeColumn(conn)
     const { product: productTable, productvariant: variantTable } = await getTableNames()
 
     // Upsert product
     const productSalePrice = product.variants?.[0]?.price || 0
     const totalQuantity = product.variants?.reduce((sum, v) => sum + (parseInt(v.inventory_quantity) || 0), 0) || 0
+    const productBarcode = product.variants?.[0]?.barcode || null
 
     const productData = [
       String(product.id),
@@ -78,14 +96,15 @@ export async function upsertProduct(product) {
       product.status || 'active',
       product.image?.src || (product.images?.[0]?.src) || null,
       product.handle || null,
+      productBarcode,
       productSalePrice,
       0, // Default cost price to 0 on upsert (Shopify might not provide it)
       totalQuantity,
     ]
 
     await conn.execute(
-      `INSERT INTO ${productTable} (id, title, description, vendor, product_type, status, image, handle, sale_price, cost_price, quantity, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      `INSERT INTO ${productTable} (id, title, description, vendor, product_type, status, image, handle, barcode, sale_price, cost_price, quantity, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
        ON DUPLICATE KEY UPDATE
        title = VALUES(title),
        description = VALUES(description),
@@ -94,6 +113,7 @@ export async function upsertProduct(product) {
        status = VALUES(status),
        image = VALUES(image),
        handle = VALUES(handle),
+       barcode = VALUES(barcode),
        sale_price = VALUES(sale_price),
        quantity = VALUES(quantity),
        updatedAt = NOW()`,
@@ -267,6 +287,7 @@ export async function updateProduct(id, data) {
   const conn = await connection.getConnection()
   try {
     await conn.beginTransaction()
+    await ensureProductBarcodeColumn(conn)
     const { product: productTable, productvariant: variantTable } = await getTableNames()
 
     // Update Product table
@@ -276,6 +297,7 @@ export async function updateProduct(id, data) {
     if (data.title !== undefined) { updateFields.push('title = ?'); params.push(data.title) }
     if (data.vendor !== undefined) { updateFields.push('vendor = ?'); params.push(data.vendor) }
     if (data.status !== undefined) { updateFields.push('status = ?'); params.push(data.status) }
+    if (data.barcode !== undefined) { updateFields.push('barcode = ?'); params.push(data.barcode) }
     if (data.sale_price !== undefined) { updateFields.push('sale_price = ?'); params.push(data.sale_price) }
     if (data.original_price !== undefined) { updateFields.push('original_price = ?'); params.push(data.original_price) }
     if (data.cost_price !== undefined) { updateFields.push('cost_price = ?'); params.push(data.cost_price) }

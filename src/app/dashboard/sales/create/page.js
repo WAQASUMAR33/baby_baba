@@ -46,7 +46,7 @@ export default function EnhancedPOSPage() {
       let hasMore = true
 
       while (hasMore) {
-        const response = await fetch(`/api/products?limit=${pageSize}&offset=${offset}`)
+        const response = await fetch(`/api/products?limit=${pageSize}&offset=${offset}&joinCategory=inner`)
         const data = await response.json()
         if (!data.success) {
           throw new Error(data.error || 'Failed to fetch products')
@@ -105,12 +105,16 @@ export default function EnhancedPOSPage() {
     ? products.filter(product => {
       const title = normalizeText(product.title)
       const vendor = normalizeText(product.vendor)
+      const productBarcode = normalizeText(product.barcode)
       const variantMatch = Array.isArray(product.variants) && product.variants.some(v => {
         const sku = normalizeText(v.sku)
         const barcode = normalizeText(v.barcode)
         return (sku && sku.includes(normalizedSearch)) || (barcode && barcode.includes(normalizedSearch))
       })
-      return (title && title.includes(normalizedSearch)) || (vendor && vendor.includes(normalizedSearch)) || variantMatch
+      return (title && title.includes(normalizedSearch)) ||
+        (vendor && vendor.includes(normalizedSearch)) ||
+        (productBarcode && productBarcode.includes(normalizedSearch)) ||
+        variantMatch
     })
     : products
 
@@ -119,12 +123,16 @@ export default function EnhancedPOSPage() {
       const score = (product) => {
         const title = normalizeText(product.title)
         const vendor = normalizeText(product.vendor)
-        if (title === normalizedSearch) return 0
-        if (title.startsWith(normalizedSearch)) return 1
-        if (title.includes(normalizedSearch)) return 2
-        if (vendor.startsWith(normalizedSearch)) return 3
-        if (vendor.includes(normalizedSearch)) return 4
-        return 5
+        const productBarcode = normalizeText(product.barcode)
+        if (productBarcode === normalizedSearch) return 0
+        if (title === normalizedSearch) return 1
+        if (productBarcode && productBarcode.startsWith(normalizedSearch)) return 2
+        if (title.startsWith(normalizedSearch)) return 3
+        if (productBarcode && productBarcode.includes(normalizedSearch)) return 4
+        if (title.includes(normalizedSearch)) return 5
+        if (vendor.startsWith(normalizedSearch)) return 6
+        if (vendor.includes(normalizedSearch)) return 7
+        return 8
       }
       return score(a) - score(b)
     })
@@ -450,8 +458,7 @@ export default function EnhancedPOSPage() {
         <body>
           <!-- Header -->
           <div class="print-logo">
-            <img src="/babybazar.jpeg" alt="Baby Bazar Logo" style="height: 80px; margin-bottom: 8px;">
-            <h1 style="text-transform: uppercase;">Baby Bazar</h1>
+            <img src="/babybazar.jpeg" alt="Baby Bazar Logo" style="height: 50px; margin-bottom: 6px;">
             <p>Post Office Road Mandi Bahauddin</p>
             <p>Ph : 0347-943-2880</p>
           </div>
@@ -580,15 +587,13 @@ export default function EnhancedPOSPage() {
 
           <!-- Footer -->
           <div class="print-footer">
-            <p style="margin: 4px 0; font-weight: bold;">Thank you for your purchase!</p>
-            <p style="margin: 4px 0;">we look forward to seeing you soon</p>
-            <p style="margin: 8px 0 0 0; font-size: 7pt;">Powered by RapidtechPro</p>
             <div style="margin-top: 8px; font-size: 7pt; text-align: left;">
-              <p style="margin: 4px 0; font-weight: bold;">Important Note:</p>
-              <p style="margin: 2px 0;">*Products will not be returned or exchanged without the original bill.</p>
-              <p style="margin: 2px 0;">Garments, Shoes, Hosiery Items, Feeding Items, Stuff Toys Can Be Returned Or Exchanged Within 4 Days.</p>
-              <p style="margin: 2px 0;">*All Electric Items, Small Toys, Prams, Wooden Cots, Wooden Cupboards, Wooden Beds, Cycles Will Not Be Returned Nor Exchanged.</p>
+              <p style="margin: 2px 0; font-weight: bold;">Important Note</p>
+              <p style="margin: 2px 0;">• Products will not be returned or exchanged without the original bill.</p>
+              <p style="margin: 2px 0;">• items can be exchanged within 3 days,</p>
+              <p style="margin: 2px 0;">• All Electric Items, Small Toys, Prams, Wooden Cots, Wooden Cupboards, Wooden Beds, Cycles Will Not Be Returned Nor Exchanged.</p>
             </div>
+            <p style="margin: 6px 0 0 0; text-align: center;">we look forward to seeing you soon</p>
           </div>
 
           <script>
@@ -878,11 +883,19 @@ export default function EnhancedPOSPage() {
                             <div className="flex-1">
                               <p className="font-medium text-gray-900">{product.title}</p>
                               <div className="flex items-center space-x-3 mt-1">
+                    {product.categoryName && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        {product.categoryName}
+                      </span>
+                    )}
                                 <p className="text-sm text-indigo-600 font-semibold">
                                   {formatCurrency(variant?.price || 0)}
                                 </p>
                                 {variant?.sku && (
                                   <p className="text-xs text-gray-500">SKU: {variant.sku}</p>
+                                )}
+                                {variant?.barcode && (
+                                  <p className="text-xs text-gray-500">Barcode: {variant.barcode}</p>
                                 )}
                                 <p className={`text-xs font-medium ${isOutOfStock ? 'text-red-600' : stock <= 5 ? 'text-yellow-600' : 'text-green-600'
                                   }`}>
@@ -956,6 +969,7 @@ export default function EnhancedPOSPage() {
                           <div>
                             <p className="text-sm font-medium text-gray-900">{item.productName}</p>
                             {item.sku && <p className="text-xs text-gray-500">SKU: {item.sku}</p>}
+                            {item.barcode && <p className="text-xs text-gray-500">Barcode: {item.barcode}</p>}
                           </div>
                         </td>
                         <td className="px-3 py-3 text-right">
