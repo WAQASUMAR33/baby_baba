@@ -89,7 +89,7 @@ export async function GET(request) {
         await ensureProductBarcodeColumn();
 
         const baseSelect = (() => {
-            const categorySelect = `, ${joinCategory !== 'none' ? 'c.name as categoryName' : ''}`;
+            const categorySelect = joinCategory !== 'none' ? ', c.name as categoryName' : '';
             const categoryJoin =
                 joinCategory === 'inner'
                     ? ` INNER JOIN ${category} c ON p.categoryId = c.id`
