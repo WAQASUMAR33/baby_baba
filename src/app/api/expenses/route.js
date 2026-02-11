@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
+import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { findUserByEmail } from '@/lib/db'
 import { createExpense, getExpenses } from '@/lib/expense-db'
 
@@ -9,7 +10,7 @@ import { createExpense, getExpenses } from '@/lib/expense-db'
  */
 export async function POST(request) {
   try {
-    const session = await getServerSession()
+    const session = await getServerSession(authOptions)
     
     if (!session?.user) {
       return NextResponse.json(
@@ -76,7 +77,7 @@ export async function POST(request) {
  */
 export async function GET(request) {
   try {
-    const session = await getServerSession()
+    const session = await getServerSession(authOptions)
     
     if (!session?.user) {
       return NextResponse.json(
@@ -123,4 +124,3 @@ export async function GET(request) {
     )
   }
 }
-
