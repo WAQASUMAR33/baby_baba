@@ -614,6 +614,30 @@ export async function adjustInventory(locationId, inventoryItemId, quantityAdjus
 }
 
 /**
+ * Set inventory quantity to an absolute value
+ * @param {string|number} locationId - Location ID
+ * @param {string|number} inventoryItemId - Inventory item ID
+ * @param {number} available - Quantity to set (0 = out of stock)
+ * @returns {Promise<object>} - Updated inventory level
+ */
+export async function setInventory(locationId, inventoryItemId, available) {
+  try {
+    const data = await shopifyFetch('/inventory_levels/set.json', {
+      method: 'POST',
+      body: JSON.stringify({
+        location_id: locationId,
+        inventory_item_id: inventoryItemId,
+        available,
+      }),
+    })
+    return data.inventory_level || null
+  } catch (error) {
+    console.error('Error setting inventory:', error)
+    throw error
+  }
+}
+
+/**
  * Get variant details including inventory_item_id
  * @param {string|number} productId - Product ID
  * @param {string|number} variantId - Variant ID
@@ -626,6 +650,22 @@ export async function getVariant(productId, variantId) {
     return variant || null
   } catch (error) {
     console.error('Error fetching variant:', error)
+    throw error
+  }
+}
+
+/**
+ * Get a single variant directly by its ID (more efficient than getVariant).
+ * Uses /variants/{id}.json instead of fetching the whole product.
+ * @param {string|number} variantId - Variant ID
+ * @returns {Promise<object|null>} - Variant data including inventory_item_id
+ */
+export async function getVariantById(variantId) {
+  try {
+    const data = await shopifyFetch(`/variants/${variantId}.json`)
+    return data.variant || null
+  } catch (error) {
+    console.error(`Error fetching variant ${variantId}:`, error)
     throw error
   }
 }
@@ -784,7 +824,9 @@ export default {
   getLocations,
   getInventoryLevels,
   adjustInventory,
+  setInventory,
   getVariant,
+  getVariantById,
   getOrders,
   getOrder,
 }

@@ -346,6 +346,62 @@ export async function updateProduct(id, data) {
   }
 }
 
+/**
+ * Reduce local DB stock by a given quantity for a product and all its variants.
+ * Stock can go negative (e.g. deducting from 0 results in -N).
+ * @param {string} id - Product ID
+ * @param {number} quantity - Amount to deduct
+ */
+export async function reduceProductStock(id, quantity) {
+  const connection = getPool()
+  const conn = await connection.getConnection()
+  try {
+    const { product: productTable, productvariant: variantTable } = await getTableNames()
+    await conn.beginTransaction()
+    await conn.execute(
+      `UPDATE \`${productTable}\` SET quantity = quantity - ?, updatedAt = NOW() WHERE id = ?`,
+      [quantity, String(id)]
+    )
+    await conn.execute(
+      `UPDATE \`${variantTable}\` SET inventory_quantity = inventory_quantity - ?, updatedAt = NOW() WHERE productId = ?`,
+      [quantity, String(id)]
+    )
+    await conn.commit()
+  } catch (error) {
+    await conn.rollback()
+    throw error
+  } finally {
+    conn.release()
+  }
+}
+
+/**
+ * Zero out stock in local DB for a product and all its variants
+ * @param {string} id - Product ID
+ */
+export async function zeroProductStock(id) {
+  const connection = getPool()
+  const conn = await connection.getConnection()
+  try {
+    const { product: productTable, productvariant: variantTable } = await getTableNames()
+    await conn.beginTransaction()
+    await conn.execute(
+      `UPDATE \`${productTable}\` SET quantity = 0, updatedAt = NOW() WHERE id = ?`,
+      [String(id)]
+    )
+    await conn.execute(
+      `UPDATE \`${variantTable}\` SET inventory_quantity = 0, updatedAt = NOW() WHERE productId = ?`,
+      [String(id)]
+    )
+    await conn.commit()
+  } catch (error) {
+    await conn.rollback()
+    throw error
+  } finally {
+    conn.release()
+  }
+}
+
 export default {
   upsertProduct,
   clearProducts,
@@ -354,4 +410,6 @@ export default {
   getProductById,
   deleteProduct,
   updateProduct,
+  reduceProductStock,
+  zeroProductStock,
 }

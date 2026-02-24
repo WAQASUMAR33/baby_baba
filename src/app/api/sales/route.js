@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { findUserByEmail, createSale, getSales } from '@/lib/sales-db'
-import { getVariant, getLocations, adjustInventory } from '@/lib/shopify'
+import { getVariantById, getLocations, adjustInventory } from '@/lib/shopify'
 
 /**
  * POST /api/sales
@@ -63,6 +63,7 @@ export async function POST(request) {
       amountReceived: parseFloat(body.amountReceived) || 0,
       change: parseFloat(body.change) || 0,
       customerName: body.customerName || null,
+      customerId: body.customerId || null,
       status: body.status || 'completed',
       employeeId: body.employeeId || null,
       employeeName: body.employeeName || null,
@@ -84,120 +85,57 @@ export async function POST(request) {
 
     console.log(`✅ Sale created: #${sale.id} - Rs ${sale.total}`)
 
-    // Update Shopify inventory for each item
+    // Deduct Shopify inventory for each sold item (non-blocking — sale is already saved)
     const inventoryUpdates = []
-    try {
-      // Get the first location (or use default)
-      const locations = await getLocations()
-      const locationId = locations.length > 0 ? locations[0].id : null
+    // Only sync inventory for completed sales, not orders/holds
+    if (saleData.status === 'completed') {
+      try {
+        const locations = await getLocations()
+        const locationId = locations.length > 0 ? locations[0].id : null
 
-      if (!locationId) {
-        console.warn('⚠️ No Shopify location found. Inventory will not be updated.')
-        // Add warning to all items
-        body.items.forEach(item => {
-          inventoryUpdates.push({
-            productId: item.productId,
-            variantId: item.variantId,
-            title: item.title,
-            status: 'skipped',
-            reason: 'No Shopify location found'
+        if (!locationId) {
+          console.warn('⚠️ No Shopify location found. Inventory will not be updated.')
+          body.items.forEach(item => {
+            inventoryUpdates.push({ variantId: item.variantId, title: item.title, status: 'skipped', reason: 'No Shopify location found' })
           })
-        })
-      } else {
-        console.log(`📍 Using Shopify location ID: ${locationId}`)
-
-        // Update inventory for each item
-        for (const item of body.items) {
-          // Only update if inventory is tracked
-          if (item.inventoryTracked && item.variantId) {
+        } else {
+          for (const item of body.items) {
+            if (!item.variantId) {
+              inventoryUpdates.push({ title: item.title, status: 'skipped', reason: 'No variant ID' })
+              continue
+            }
             try {
-              console.log(`🔄 Updating inventory for: ${item.title} (Variant: ${item.variantId}, Qty: ${item.quantity})`)
-
-              // Get variant to get inventory_item_id
-              const variant = await getVariant(item.productId, item.variantId)
-
-              if (variant && variant.inventory_item_id) {
-                // Decrease inventory by the quantity sold (negative adjustment)
-                const quantityAdjustment = -parseInt(item.quantity)
-
-                console.log(`📦 Adjusting inventory: Location=${locationId}, Item=${variant.inventory_item_id}, Adjustment=${quantityAdjustment}`)
-
-                const result = await adjustInventory(locationId, variant.inventory_item_id, quantityAdjustment)
-
+              const variant = await getVariantById(item.variantId)
+              if (variant?.inventory_item_id) {
+                const result = await adjustInventory(locationId, variant.inventory_item_id, -parseInt(item.quantity))
                 inventoryUpdates.push({
-                  productId: item.productId,
                   variantId: item.variantId,
                   title: item.title,
                   quantity: item.quantity,
                   status: 'success',
-                  inventoryItemId: variant.inventory_item_id,
-                  newQuantity: result?.available || 'unknown'
+                  newQuantity: result?.available ?? 'unknown',
                 })
-
-                console.log(`✅ Inventory updated successfully: ${item.title} - Decreased by ${item.quantity} (New stock: ${result?.available || 'unknown'})`)
+                console.log(`✅ Shopify inventory: ${item.title} −${item.quantity} → ${result?.available ?? '?'}`)
               } else {
-                console.warn(`⚠️ Variant not found or no inventory_item_id for variant ${item.variantId} of product ${item.productId}`)
-                inventoryUpdates.push({
-                  productId: item.productId,
-                  variantId: item.variantId,
-                  title: item.title,
-                  status: 'skipped',
-                  reason: variant ? 'No inventory_item_id found' : 'Variant not found'
-                })
+                inventoryUpdates.push({ variantId: item.variantId, title: item.title, status: 'skipped', reason: 'Variant not found or not inventory-tracked' })
               }
-            } catch (inventoryError) {
-              console.error(`❌ Error updating inventory for ${item.title}:`, inventoryError)
-              console.error('Error details:', {
-                message: inventoryError.message,
-                stack: inventoryError.stack,
-                productId: item.productId,
-                variantId: item.variantId
-              })
-              inventoryUpdates.push({
-                productId: item.productId,
-                variantId: item.variantId,
-                title: item.title,
-                status: 'error',
-                error: inventoryError.message || 'Unknown error'
-              })
-              // Continue with other items even if one fails
+            } catch (err) {
+              console.error(`❌ Shopify inventory error for ${item.title}:`, err.message)
+              inventoryUpdates.push({ variantId: item.variantId, title: item.title, status: 'error', error: err.message })
             }
-          } else {
-            console.log(`⏭️ Skipping inventory update for ${item.title}: ${!item.inventoryTracked ? 'Inventory not tracked' : 'No variant ID'}`)
-            inventoryUpdates.push({
-              productId: item.productId,
-              variantId: item.variantId,
-              title: item.title,
-              status: 'skipped',
-              reason: !item.inventoryTracked ? 'Inventory not tracked in Shopify' : 'No variant ID provided'
-            })
           }
+
+          const ok = inventoryUpdates.filter(u => u.status === 'success').length
+          const fail = inventoryUpdates.filter(u => u.status === 'error').length
+          const skip = inventoryUpdates.filter(u => u.status === 'skipped').length
+          console.log(`📊 Shopify Inventory: ${ok} updated, ${fail} errors, ${skip} skipped`)
         }
-      }
-
-      // Log summary
-      const successful = inventoryUpdates.filter(u => u.status === 'success').length
-      const failed = inventoryUpdates.filter(u => u.status === 'error').length
-      const skipped = inventoryUpdates.filter(u => u.status === 'skipped').length
-
-      console.log(`📊 Inventory Update Summary: ${successful} successful, ${failed} failed, ${skipped} skipped`)
-
-    } catch (inventoryError) {
-      // Log error but don't fail the sale
-      console.error('❌ Critical error updating Shopify inventory:', inventoryError)
-      console.error('Error stack:', inventoryError.stack)
-      console.log('⚠️ Sale was created successfully, but inventory update failed')
-
-      // Mark all items as failed
-      body.items.forEach(item => {
-        inventoryUpdates.push({
-          productId: item.productId,
-          variantId: item.variantId,
-          title: item.title,
-          status: 'error',
-          error: inventoryError.message || 'Critical inventory update error'
+      } catch (err) {
+        console.error('❌ Critical Shopify inventory error:', err.message)
+        body.items.forEach(item => {
+          inventoryUpdates.push({ variantId: item.variantId, title: item.title, status: 'error', error: err.message })
         })
-      })
+      }
     }
 
     return NextResponse.json({
@@ -243,6 +181,7 @@ export async function GET(request) {
       startDate: searchParams.get('startDate'),
       endDate: searchParams.get('endDate'),
       employeeId: searchParams.get('employeeId'),
+      saleId: searchParams.get('saleId'),
     }
 
     // Fetch sales using direct SQL
