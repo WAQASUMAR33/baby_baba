@@ -16,9 +16,12 @@
     "verify-users": "node scripts/verify-users.js"
   },
   "dependencies": {
+    "@emotion/react": "^11.11.4",
+    "@emotion/styled": "^11.11.5",
     "@prisma/adapter-mariadb": "^6.0.0",
     "@prisma/client": "^6.0.0",
     "@shopify/shopify-api": "^12.2.0",
+    "@mui/material": "^5.16.7",
     "bcryptjs": "^3.0.3",
     "jsbarcode": "^3.12.1",
     "mysql2": "^3.16.0",

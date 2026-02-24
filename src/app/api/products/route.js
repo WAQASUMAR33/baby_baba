@@ -69,9 +69,25 @@ async function ensureProductBarcodeColumn() {
 export async function GET(request) {
     try {
         const { searchParams } = new URL(request.url);
+
+        const pool = getPool();
+        const { product, productvariant, category } = await getTableNames();
+
+        // Lightweight endpoint: return distinct vendors only
+        if (searchParams.get('vendorsOnly') === 'true') {
+            const [vendorRows] = await pool.execute(
+                `SELECT DISTINCT vendor FROM \`${product}\` WHERE vendor IS NOT NULL AND vendor != '' ORDER BY vendor`
+            );
+            return NextResponse.json({ success: true, vendors: vendorRows.map(r => r.vendor) });
+        }
+
+        await ensureProductBarcodeColumn();
+
         const search = searchParams.get('search') || '';
         const status = searchParams.get('status') || 'all';
         const vendor = searchParams.get('vendor') || 'all';
+        const categoryId = searchParams.get('categoryId') || '';
+        const stock = searchParams.get('stock') || 'all';
         const sortBy = searchParams.get('sortBy') || 'name';
         const joinCategory = (searchParams.get('joinCategory') || 'none').toLowerCase();
         const limitParam = searchParams.get('limit');
@@ -84,29 +100,23 @@ export async function GET(request) {
         const limit = isAll ? 1000 : parsedLimit;
         const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
 
-        const pool = getPool();
-        const { product, productvariant, category } = await getTableNames();
-        await ensureProductBarcodeColumn();
+        const joinClause = joinCategory === 'inner'
+            ? ` INNER JOIN \`${category}\` c ON p.categoryId = c.id`
+            : joinCategory === 'left'
+                ? ` LEFT JOIN \`${category}\` c ON p.categoryId = c.id`
+                : '';
 
-        const baseSelect = (() => {
-            const categorySelect = joinCategory !== 'none' ? ', c.name as categoryName' : '';
-            const categoryJoin =
-                joinCategory === 'inner'
-                    ? ` INNER JOIN ${category} c ON p.categoryId = c.id`
-                    : joinCategory === 'left'
-                        ? ` LEFT JOIN ${category} c ON p.categoryId = c.id`
-                        : '';
-            return `
+        const baseSelect = `
       SELECT p.id, p.title, p.vendor, p.product_type, p.status, p.handle, p.updatedAt,
              p.original_price, p.sale_price, p.quantity, p.categoryId, p.barcode as product_barcode
-             ${categorySelect},
-             v.id as variant_id, v.title as variant_title, v.price, v.compare_at_price, 
+             ${joinCategory !== 'none' ? ', c.name as categoryName' : ''},
+             v.id as variant_id, v.title as variant_title, v.price, v.compare_at_price,
              v.sku, v.barcode, v.inventory_quantity, v.weight, v.weight_unit
-      FROM ${product} p
-      ${categoryJoin}
-      LEFT JOIN ${productvariant} v ON p.id = v.productId
+      FROM \`${product}\` p
+      ${joinClause}
+      LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
     `;
-        })();
+
         const filterParams = [];
         const conditions = [];
 
@@ -126,7 +136,22 @@ export async function GET(request) {
             filterParams.push(vendor);
         }
 
+        // Category filter: 'none' = uncategorized, otherwise filter by id
+        if (categoryId === 'none') {
+            conditions.push(`p.categoryId IS NULL`);
+        } else if (categoryId && categoryId !== 'all') {
+            conditions.push(`p.categoryId = ?`);
+            filterParams.push(parseInt(categoryId));
+        }
+
         const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+
+        // Stock filter applied as HAVING on aggregated inventory_quantity
+        const stockHaving = {
+            'in-stock': 'HAVING stock_total > 10',
+            'low-stock': 'HAVING stock_total > 0 AND stock_total <= 10',
+            'out-of-stock': 'HAVING stock_total = 0',
+        }[stock] || '';
 
         const orderByClause = (() => {
             switch (sortBy) {
@@ -152,63 +177,100 @@ export async function GET(request) {
             }
         })();
 
-        let countQuery = `
-      SELECT COUNT(DISTINCT p.id) as total
-      FROM ${product} p
-      ${joinCategory === 'inner'
-                ? ` INNER JOIN ${category} c ON p.categoryId = c.id`
-                : joinCategory === 'left'
-                    ? ` LEFT JOIN ${category} c ON p.categoryId = c.id`
-                    : ''}
-      LEFT JOIN ${productvariant} v ON p.id = v.productId
-    ${whereClause}`;
-        const [countRows] = await pool.execute(countQuery, filterParams)
-        const total = countRows?.[0]?.total || 0
+        // Count query: use a subquery when stock filter is active (requires HAVING)
+        let countQuery;
+        if (stockHaving) {
+            countQuery = `
+        SELECT COUNT(*) as total FROM (
+          SELECT p.id, SUM(COALESCE(v.inventory_quantity, 0)) as stock_total
+          FROM \`${product}\` p
+          ${joinClause}
+          LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
+          ${whereClause}
+          GROUP BY p.id
+          ${stockHaving}
+        ) as stock_sub
+      `;
+        } else {
+            countQuery = `
+        SELECT COUNT(DISTINCT p.id) as total
+        FROM \`${product}\` p
+        ${joinClause}
+        LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
+        ${whereClause}
+      `;
+        }
+
+        const [countRows] = await pool.execute(countQuery, filterParams);
+        const total = countRows?.[0]?.total || 0;
 
         let rows = [];
+        let ids = [];
+
         if (applyLimit) {
             const idQuery = `
         SELECT p.id, SUM(COALESCE(v.inventory_quantity, 0)) as stock_total
-        FROM ${product} p
-        ${joinCategory === 'inner'
-                    ? ` INNER JOIN ${category} c ON p.categoryId = c.id`
-                    : joinCategory === 'left'
-                        ? ` LEFT JOIN ${category} c ON p.categoryId = c.id`
-                        : ''}
-        LEFT JOIN ${productvariant} v ON p.id = v.productId
+        FROM \`${product}\` p
+        ${joinClause}
+        LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
         ${whereClause}
         GROUP BY p.id
+        ${stockHaving}
         ${idOrderByClause}
         LIMIT ? OFFSET ?
       `;
             const [idRows] = await pool.execute(idQuery, [...filterParams, limit, offset]);
-            const ids = idRows.map((row) => row.id);
+            ids = idRows.map((row) => row.id);
 
             if (ids.length === 0) {
-                return NextResponse.json({
-                    success: true,
-                    products: [],
-                    total,
-                    limit,
-                    offset
-                });
+                return NextResponse.json({ success: true, products: [], total, limit, offset });
             }
 
-            const placeholders = ids.map(() => '?').join(',');
-            const detailQuery = `
-        ${baseSelect}
-        WHERE p.id IN (${placeholders})
-        ORDER BY FIELD(p.id, ${placeholders})
-      `;
-            const [detailRows] = await pool.execute(detailQuery, [...ids, ...ids]);
+            const chunkSize = 200;
+            const detailRows = [];
+            for (let i = 0; i < ids.length; i += chunkSize) {
+                const chunk = ids.slice(i, i + chunkSize);
+                const placeholders = chunk.map(() => '?').join(',');
+                const detailQuery = `${baseSelect} WHERE p.id IN (${placeholders})`;
+                const [chunkRows] = await pool.execute(detailQuery, chunk);
+                detailRows.push(...chunkRows);
+            }
             rows = detailRows;
         } else {
-            const query = `${baseSelect}${whereClause}${orderByClause}`;
-            const [detailRows] = await pool.execute(query, filterParams);
-            rows = detailRows;
+            if (stockHaving) {
+                // Two-step for non-paginated with stock filter
+                const allIdQuery = `
+          SELECT p.id, SUM(COALESCE(v.inventory_quantity, 0)) as stock_total
+          FROM \`${product}\` p
+          ${joinClause}
+          LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
+          ${whereClause}
+          GROUP BY p.id
+          ${stockHaving}
+          ${idOrderByClause}
+        `;
+                const [allIdRows] = await pool.execute(allIdQuery, filterParams);
+                ids = allIdRows.map(r => r.id);
+                if (ids.length > 0) {
+                    const chunkSize = 200;
+                    for (let i = 0; i < ids.length; i += chunkSize) {
+                        const chunk = ids.slice(i, i + chunkSize);
+                        const placeholders = chunk.map(() => '?').join(',');
+                        const [chunkRows] = await pool.execute(
+                            `${baseSelect} WHERE p.id IN (${placeholders})`,
+                            chunk
+                        );
+                        rows.push(...chunkRows);
+                    }
+                }
+            } else {
+                const query = `${baseSelect}${whereClause}${orderByClause}`;
+                const [detailRows] = await pool.execute(query, filterParams);
+                rows = detailRows;
+            }
         }
 
-        // Group rows by product (since LEFT JOIN returns multiple rows for variants)
+        // Group rows by product (LEFT JOIN produces multiple rows per product for variants)
         const productMap = new Map();
         rows.forEach(row => {
             if (!productMap.has(row.id)) {
@@ -245,9 +307,13 @@ export async function GET(request) {
             }
         });
 
+        const products = applyLimit
+            ? ids.map((id) => productMap.get(id)).filter(Boolean)
+            : Array.from(productMap.values());
+
         return NextResponse.json({
             success: true,
-            products: Array.from(productMap.values()),
+            products,
             total,
             limit: applyLimit ? limit : null,
             offset: applyLimit ? offset : 0
@@ -283,7 +349,7 @@ export async function POST(request) {
 
         while (handleExists) {
             const [existingProducts] = await pool.execute(
-                `SELECT id FROM ${product} WHERE handle = ?`,
+                `SELECT id FROM \`${product}\` WHERE handle = ?`,
                 [handle]
             );
 
@@ -299,8 +365,8 @@ export async function POST(request) {
 
         // Insert product
         await pool.execute(
-            `INSERT INTO ${product} (id, title, description, vendor, product_type, status, image, handle, 
-             barcode, sale_price, original_price, cost_price, quantity, categoryId, createdAt, updatedAt) 
+            `INSERT INTO \`${product}\` (id, title, description, vendor, product_type, status, image, handle,
+             barcode, sale_price, original_price, cost_price, quantity, categoryId, createdAt, updatedAt)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
             [
                 productId,
@@ -323,8 +389,8 @@ export async function POST(request) {
         // Insert variant (every product needs at least one variant)
         const variantId = body.variant_id || `${productId}-variant-1`;
         await pool.execute(
-            `INSERT INTO ${productvariant} (id, productId, title, price, compare_at_price, sku, barcode, 
-             inventory_quantity, weight, weight_unit, createdAt, updatedAt) 
+            `INSERT INTO \`${productvariant}\` (id, productId, title, price, compare_at_price, sku, barcode,
+             inventory_quantity, weight, weight_unit, createdAt, updatedAt)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
             [
                 variantId,

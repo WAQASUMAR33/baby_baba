@@ -3,14 +3,20 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useSession } from "next-auth/react"
+import { toast } from "react-hot-toast"
 import LoadingSpinner from "@/components/LoadingSpinner"
 
 export default function SalesPage() {
   const { data: session } = useSession()
   const [sales, setSales] = useState([])
   const [posSales, setPosSales] = useState([])
+  const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('pos') // 'promotions' or 'pos'
+  const [loadingOrders, setLoadingOrders] = useState(false)
+  const [convertingId, setConvertingId] = useState(null)
+  const [orderSearch, setOrderSearch] = useState('')
+  const [customers, setCustomers] = useState([])
+  const [activeTab, setActiveTab] = useState('pos')
   const [selectedSale, setSelectedSale] = useState(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [stats, setStats] = useState({ totalSales: 0, totalRevenue: 0, totalDiscount: 0, totalCommission: 0 })
@@ -26,7 +32,9 @@ export default function SalesPage() {
   useEffect(() => {
     fetchSales()
     fetchPosSales()
+    fetchOrders()
     fetchEmployees()
+    fetchCustomers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -57,6 +65,18 @@ export default function SalesPage() {
     }
   }
 
+  const fetchCustomers = async () => {
+    try {
+      const response = await fetch('/api/customers')
+      const data = await response.json()
+      if (data.success) {
+        setCustomers(data.customers || [])
+      }
+    } catch (error) {
+      console.error('Error fetching customers:', error)
+    }
+  }
+
   const fetchPosSales = async () => {
     try {
       setLoading(true)
@@ -78,6 +98,49 @@ export default function SalesPage() {
       console.error('Error fetching POS sales:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchOrders = async () => {
+    try {
+      setLoadingOrders(true)
+      const params = new URLSearchParams()
+      params.append('status', 'order')
+      params.append('limit', '100')
+      params.append('offset', '0')
+      const response = await fetch(`/api/sales?${params}`)
+      const data = await response.json()
+      if (data.success) {
+        setOrders(data.sales || [])
+      } else {
+        toast.error(data.error || 'Failed to load orders')
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to load orders')
+    } finally {
+      setLoadingOrders(false)
+    }
+  }
+
+  const convertOrder = async (orderId) => {
+    try {
+      setConvertingId(orderId)
+      const response = await fetch('/api/orders/convert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+      })
+      const data = await response.json()
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to convert order')
+      }
+      toast.success(`Order #${orderId} converted to sale`)
+      await fetchOrders()
+      await fetchPosSales()
+    } catch (error) {
+      toast.error(error.message || 'Failed to convert order')
+    } finally {
+      setConvertingId(null)
     }
   }
 
@@ -454,6 +517,36 @@ export default function SalesPage() {
 
   const selectedSalePaymentBreakdown = parsePaymentBreakdown(selectedSale?.paymentBreakdown)
 
+  const normalizeText = (value) => {
+    if (value === null || value === undefined) return ''
+    return value
+      .toString()
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[\u2010-\u2015]/g, '-')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  const normalizedOrderSearch = normalizeText(orderSearch)
+  const customerPhoneById = new Map(
+    customers.map((customer) => [String(customer.id), customer.phoneNumber || customer.phone_number || ''])
+  )
+  const filteredOrders = normalizedOrderSearch
+    ? orders.filter((order) => {
+      const orderId = normalizeText(order.id)
+      const customer = normalizeText(order.customerName)
+      const phone = normalizeText(
+        order.customerPhone || customerPhoneById.get(String(order.customerId)) || ''
+      )
+      return (orderId && orderId.includes(normalizedOrderSearch)) ||
+        (customer && customer.includes(normalizedOrderSearch)) ||
+        (phone && phone.includes(normalizedOrderSearch))
+    })
+    : orders
+
   const deleteSale = (id) => {
     if (confirm('Are you sure you want to delete this sale?')) {
       const updatedSales = sales.filter(sale => sale.id !== id)
@@ -493,7 +586,13 @@ export default function SalesPage() {
           </div>
           <div className="flex items-center space-x-3">
             <button
-              onClick={fetchPosSales}
+              onClick={() => {
+                if (activeTab === 'orders') {
+                  fetchOrders()
+                } else {
+                  fetchPosSales()
+                }
+              }}
               className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
               <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -501,6 +600,12 @@ export default function SalesPage() {
               </svg>
               Refresh
             </button>
+            <Link
+              href="/dashboard/sales/returns"
+              className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              Sale Return
+            </Link>
             <Link
               href="/dashboard/sales/create"
               className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
@@ -533,6 +638,15 @@ export default function SalesPage() {
                 } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
             >
               Promotions ({sales.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('orders')}
+              className={`${activeTab === 'orders'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              Orders ({orders.length})
             </button>
           </nav>
         </div>
@@ -982,6 +1096,119 @@ export default function SalesPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Orders Tab */}
+      {activeTab === 'orders' && (
+        <div className="bg-white shadow rounded-lg overflow-hidden">
+          <div className="border-b border-gray-200 p-4">
+            <input
+              type="text"
+              value={orderSearch}
+              onChange={(e) => setOrderSearch(e.target.value)}
+              placeholder="Search orders by ID, customer, or phone"
+              className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          {loadingOrders ? (
+            <div className="p-6 text-sm text-gray-500">Loading orders...</div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="p-6 text-sm text-gray-500">No booked orders found.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Order #
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Date & Time
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Customer
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Employee
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Items
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Total
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredOrders.map((order) => (
+                    <tr key={order.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        #{order.id}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {order.createdAt
+                          ? new Date(order.createdAt).toLocaleString('en-GB', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : 'N/A'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {order.customerName || 'Walk-in'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {order.employeeName || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {order.items?.length || 0} items
+                        <button
+                          onClick={() => viewSaleDetails(order)}
+                          className="ml-2 text-indigo-600 hover:text-indigo-900 text-xs font-medium underline"
+                        >
+                          View Details
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatCurrency(order.total || 0)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize bg-yellow-100 text-yellow-800">
+                          {order.status || 'order'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                        <div className="flex items-center justify-end gap-2">
+                          <Link
+                            href={`/dashboard/sales/create?orderId=${order.id}`}
+                            className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                          >
+                            Load to POS
+                          </Link>
+                          <button
+                            onClick={() => convertOrder(order.id)}
+                            disabled={convertingId === order.id}
+                            className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60"
+                          >
+                            {convertingId === order.id ? 'Converting...' : 'Convert to Sale'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Sale Details Modal */}

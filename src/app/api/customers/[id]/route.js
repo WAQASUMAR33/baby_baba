@@ -53,7 +53,8 @@ export async function GET(request, { params }) {
             return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
         }
 
-        const customerId = parseInt(params.id)
+        const { id } = await params
+        const customerId = parseInt(id)
         const connection = getPool()
         const customerTable = await getCustomerTable()
         if (!customerTable) {
@@ -84,8 +85,8 @@ export async function PATCH(request, { params }) {
             return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
         }
 
-        const body = await request.json()
-        const customerId = parseInt(params.id)
+        const [body, { id }] = await Promise.all([request.json(), params])
+        const customerId = parseInt(id)
         const connection = getPool()
         const customerTable = await getCustomerTable()
         if (!customerTable) {
@@ -127,7 +128,8 @@ export async function DELETE(request, { params }) {
             return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
         }
 
-        const customerId = parseInt(params.id)
+        const { id } = await params
+        const customerId = parseInt(id)
         const connection = getPool()
         const customerTable = await getCustomerTable()
         if (!customerTable) {

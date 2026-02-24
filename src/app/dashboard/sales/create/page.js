@@ -2,22 +2,39 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useSearchParams, useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { toast } from "react-hot-toast"
 
-export default function EnhancedPOSPage() {
+export function EnhancedPOSPage({ mode = "sale" }) {
   const { data: session } = useSession()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const isOrderMode = mode === "order"
+  const entityLabel = isOrderMode ? "Order" : "Sale"
+  const entityLabelPlural = isOrderMode ? "Orders" : "Sales"
+  const submitEndpoint = isOrderMode ? "/api/orders" : "/api/sales"
+  const heldStorageKey = isOrderMode ? "pos_held_orders" : "pos_held_sales"
+  const defaultStatus = isOrderMode ? "order" : "completed"
 
   // Product and Employee States
   const [products, setProducts] = useState([])
   const [employees, setEmployees] = useState([])
+  const [customers, setCustomers] = useState([])
   const [loadingProducts, setLoadingProducts] = useState(true)
   const [loadingEmployees, setLoadingEmployees] = useState(true)
+  const [loadingCustomers, setLoadingCustomers] = useState(true)
 
   // Filter and Selection States
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedEmployee, setSelectedEmployee] = useState(null)
+  const [employeeSearch, setEmployeeSearch] = useState("")
+  const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false)
+  const [selectedCustomerId, setSelectedCustomerId] = useState("")
+  const [customerSearch, setCustomerSearch] = useState("")
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false)
+  const [selectedCustomerBalance, setSelectedCustomerBalance] = useState(null)
 
   // Cart States
   const [billItems, setBillItems] = useState([])
@@ -30,11 +47,29 @@ export default function EnhancedPOSPage() {
   const [customerName, setCustomerName] = useState("")
   const [processingPayment, setProcessingPayment] = useState(false)
   const [lastSale, setLastSale] = useState(null)
+  const [loadedOrderId, setLoadedOrderId] = useState(null)
+  const [loadingOrder, setLoadingOrder] = useState(false)
+  const [orders, setOrders] = useState([])
+  const [loadingOrders, setLoadingOrders] = useState(false)
+  const [showOrderModal, setShowOrderModal] = useState(false)
+  const [orderSearch, setOrderSearch] = useState("")
+  const [loadedOrderPaid, setLoadedOrderPaid] = useState(0)
+  const [loadedOrderTotal, setLoadedOrderTotal] = useState(0)
+  const [autoAmountReceived, setAutoAmountReceived] = useState(false)
 
   useEffect(() => {
     fetchProducts()
     fetchEmployees()
+    fetchCustomers()
   }, [])
+
+  useEffect(() => {
+    const orderId = searchParams.get('orderId')
+    if (isOrderMode || !orderId) return
+    if (loadedOrderId === orderId) return
+    if (loadingProducts) return
+    loadOrder(orderId)
+  }, [searchParams, isOrderMode, loadedOrderId, loadingProducts])
 
   const fetchProducts = async () => {
     try {
@@ -86,6 +121,145 @@ export default function EnhancedPOSPage() {
     }
   }
 
+  const fetchCustomers = async () => {
+    try {
+      setLoadingCustomers(true)
+      const response = await fetch('/api/customers')
+      const data = await response.json()
+      if (data.success) {
+        setCustomers(data.customers || [])
+      }
+    } catch (error) {
+      console.error('Error fetching customers:', error)
+    } finally {
+      setLoadingCustomers(false)
+    }
+  }
+
+  const fetchOrders = async () => {
+    try {
+      setLoadingOrders(true)
+      const params = new URLSearchParams()
+      params.append('status', 'order')
+      params.append('limit', '100')
+      params.append('offset', '0')
+      const response = await fetch(`/api/sales?${params}`)
+      const data = await response.json()
+      if (data.success) {
+        setOrders(data.sales || [])
+      } else {
+        toast.error(data.error || 'Failed to load orders')
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to load orders')
+    } finally {
+      setLoadingOrders(false)
+    }
+  }
+
+  const loadOrder = async (orderId) => {
+    try {
+      setLoadingOrder(true)
+      const response = await fetch(`/api/sales?saleId=${orderId}`)
+      const data = await response.json()
+      if (!data.success || !data.sales || data.sales.length === 0) {
+        throw new Error(data.error || 'Order not found')
+      }
+      const order = data.sales[0]
+      if (order.status === 'completed') {
+        throw new Error('Order is already converted to sale')
+      }
+      const newItems = (order.items || []).map((item) => {
+        const quantity = parseInt(item.quantity || 0)
+        const unitRate = parseFloat(item.price || 0)
+        const total = unitRate * quantity
+        const discount = parseFloat(item.discount || 0)
+        const netTotal = total - discount
+        const product = products.find(p => String(p.id) === String(item.productId))
+        const variant = product?.variants?.find(v => String(v.id) === String(item.variantId))
+        const availableStock = parseInt(variant?.inventory_quantity || 0)
+        return {
+          productId: item.productId,
+          variantId: item.variantId,
+          productName: item.title || product?.title || 'Item',
+          unitRate,
+          quantity,
+          total,
+          discount,
+          discountType: 'rupees',
+          netTotal,
+          sku: item.sku || variant?.sku || '',
+          barcode: variant?.barcode || '',
+          availableStock,
+        }
+      })
+
+      setBillItems(newItems)
+      setCustomerName(order.customerName || "")
+      setSelectedCustomerId(order.customerId ? String(order.customerId) : "")
+      setCustomerSearch(order.customerName || "")
+      const orderCust = order.customerId ? customers.find(c => String(c.id) === String(order.customerId)) : null
+      setSelectedCustomerBalance(orderCust ? parseFloat(orderCust.balance ?? 0) : null)
+      setGlobalDiscount(parseFloat(order.discount ?? 0))
+      const breakdown = parsePaymentBreakdown(order.paymentBreakdown)
+      const paidFromBreakdown = breakdown.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+      const paidFromCash = parseFloat(order.amountReceived || 0) - parseFloat(order.change || 0)
+      const paidValue = breakdown.length > 0 ? paidFromBreakdown : paidFromCash
+      const orderTotal = parseFloat(order.total || 0)
+      const normalizedPaid = Math.max(0, Math.min(orderTotal, paidValue))
+      setLoadedOrderPaid(normalizedPaid)
+      setLoadedOrderTotal(orderTotal)
+      setAutoAmountReceived(!isOrderMode)
+      if (order.paymentMethod === 'split' || breakdown.length > 0) {
+        if (isOrderMode) {
+          setPaymentMethod('split')
+          setSplitPayments(breakdown.map((entry) => ({
+            method: entry.method,
+            amount: entry.amount,
+          })))
+          setAmountReceived("")
+        } else {
+          setPaymentMethod('cash')
+          setSplitPayments([])
+          const remainingAmount = Math.max(0, orderTotal - normalizedPaid)
+          setAmountReceived(remainingAmount ? String(remainingAmount) : "")
+        }
+      } else {
+        if (isOrderMode) {
+          setPaymentMethod(order.paymentMethod || 'cash')
+          setSplitPayments([])
+          setAmountReceived(order.amountReceived ? String(order.amountReceived) : "")
+        } else {
+          setPaymentMethod('cash')
+          setSplitPayments([])
+          const remainingAmount = Math.max(0, orderTotal - normalizedPaid)
+          setAmountReceived(remainingAmount ? String(remainingAmount) : "")
+        }
+      }
+
+      if (order.employeeId) {
+        const matchedEmployee = employees.find(emp => String(emp.id) === String(order.employeeId))
+        setSelectedEmployee(matchedEmployee || null)
+        if (matchedEmployee) {
+          setEmployeeSearch(`${matchedEmployee.name}${matchedEmployee.phoneNumber ? ` (${matchedEmployee.phoneNumber})` : ''}`)
+        } else {
+          setEmployeeSearch("")
+        }
+      } else {
+        setSelectedEmployee(null)
+        setEmployeeSearch("")
+      }
+
+      setLoadedOrderId(String(order.id))
+      setLastSale(null)
+      toast.success(`Order #${order.id} loaded`)
+    } catch (error) {
+      toast.error(error.message || 'Failed to load order')
+    } finally {
+      setLoadingOrder(false)
+    }
+  }
+
   const normalizeText = (value) => {
     if (value === null || value === undefined) return ''
     return value
@@ -100,6 +274,9 @@ export default function EnhancedPOSPage() {
   }
 
   const normalizedSearch = normalizeText(searchTerm)
+  const normalizedEmployeeSearch = normalizeText(employeeSearch)
+  const normalizedCustomerSearch = normalizeText(customerSearch)
+  const normalizedOrderSearch = normalizeText(orderSearch)
 
   const filteredProducts = normalizedSearch
     ? products.filter(product => {
@@ -137,6 +314,40 @@ export default function EnhancedPOSPage() {
       return score(a) - score(b)
     })
     : filteredProducts
+
+  const filteredEmployees = normalizedEmployeeSearch
+    ? employees.filter(employee => {
+      const name = normalizeText(employee.name)
+      const phone = normalizeText(employee.phoneNumber)
+      return (name && name.includes(normalizedEmployeeSearch)) ||
+        (phone && phone.includes(normalizedEmployeeSearch))
+    })
+    : employees
+
+  const filteredCustomers = normalizedCustomerSearch
+    ? customers.filter(customer => {
+      const name = normalizeText(customer.name)
+      const phone = normalizeText(customer.phoneNumber)
+      return (name && name.includes(normalizedCustomerSearch)) ||
+        (phone && phone.includes(normalizedCustomerSearch))
+    })
+    : customers
+
+  const customerPhoneById = new Map(
+    customers.map((customer) => [String(customer.id), customer.phoneNumber || customer.phone_number || ""])
+  )
+  const filteredOrders = normalizedOrderSearch
+    ? orders.filter((order) => {
+      const orderId = normalizeText(order.id)
+      const customer = normalizeText(order.customerName)
+      const phone = normalizeText(
+        order.customerPhone || customerPhoneById.get(String(order.customerId)) || ""
+      )
+      return (orderId && orderId.includes(normalizedOrderSearch)) ||
+        (customer && customer.includes(normalizedOrderSearch)) ||
+        (phone && phone.includes(normalizedOrderSearch))
+    })
+    : orders
 
   // Add product to bill
   const addProductToBill = () => {
@@ -283,11 +494,27 @@ export default function EnhancedPOSPage() {
   const subtotal = billItems.reduce((sum, item) => sum + item.netTotal, 0)
   const totalItemDiscounts = billItems.reduce((sum, item) => sum + item.discount, 0)
   const globalDiscountAmount = parseFloat(globalDiscount) || 0
-  const grandTotal = subtotal - globalDiscountAmount
+  const baseGrandTotal = subtotal - globalDiscountAmount
+  const paidOffset = !isOrderMode && loadedOrderId ? loadedOrderPaid : 0
+  const grandTotal = Math.max(0, baseGrandTotal - paidOffset)
+  const fullTotal = Math.max(0, baseGrandTotal)
+  const remainingFromOrder = !isOrderMode && loadedOrderId
+    ? Math.max(0, loadedOrderTotal - loadedOrderPaid)
+    : 0
   const change = amountReceived ? parseFloat(amountReceived) - grandTotal : 0
   const splitTotal = splitPayments.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0)
   const splitChange = splitTotal - grandTotal
   const splitRemaining = grandTotal - splitTotal
+
+  useEffect(() => {
+    if (isOrderMode || !loadedOrderId || paymentMethod !== 'cash' || !autoAmountReceived) {
+      return
+    }
+    const nextValue = grandTotal ? String(grandTotal) : "0"
+    if (nextValue !== amountReceived) {
+      setAmountReceived(nextValue)
+    }
+  }, [amountReceived, autoAmountReceived, grandTotal, isOrderMode, loadedOrderId, paymentMethod])
 
   // Format currency
   const formatCurrency = (amount) => {
@@ -629,14 +856,23 @@ export default function EnhancedPOSPage() {
       return
     }
 
-    if (paymentMethod === 'cash' && (!amountReceived || parseFloat(amountReceived) < grandTotal)) {
-      toast.error('Amount received must be equal to or greater than total')
+    if (!isOrderMode && paymentMethod === 'cash' && grandTotal > 0 && !amountReceived) {
+      toast.error('Please enter amount received')
       return
     }
 
-    if (paymentMethod === 'split' && splitTotal < grandTotal) {
-      toast.error('Split payments must cover the total amount')
-      return
+    if (!isOrderMode && paymentMethod === 'cash' && grandTotal > 0 && parseFloat(amountReceived) < grandTotal) {
+      if (!selectedCustomerId && !customerName.trim()) {
+        toast.error('Select a customer for partial payments')
+        return
+      }
+    }
+
+    if (!isOrderMode && paymentMethod === 'split' && grandTotal > 0 && splitTotal < grandTotal) {
+      if (!selectedCustomerId && !customerName.trim()) {
+        toast.error('Select a customer for partial payments')
+        return
+      }
     }
 
     setProcessingPayment(true)
@@ -650,6 +886,15 @@ export default function EnhancedPOSPage() {
         .filter(payment => payment.amount > 0)
       const splitAmountReceived = normalizedSplitPayments.reduce((sum, payment) => sum + payment.amount, 0)
       const isSplitPayment = paymentMethod === 'split'
+      const cashReceived = parseFloat(amountReceived) || 0
+      const newPayment = paymentMethod === 'cash'
+        ? cashReceived
+        : isSplitPayment
+          ? splitAmountReceived
+          : grandTotal
+      const isEditingOrder = !isOrderMode && loadedOrderId
+      const totalReceived = isEditingOrder ? loadedOrderPaid + newPayment : newPayment
+      const cashChange = Math.max(0, change)
       const saleData = {
         items: billItems.map(item => ({
           productId: item.productId,
@@ -663,23 +908,27 @@ export default function EnhancedPOSPage() {
         subtotal,
         itemDiscounts: totalItemDiscounts,
         globalDiscount: globalDiscountAmount,
-        total: grandTotal,
+        total: fullTotal,
         paymentMethod,
         paymentBreakdown: isSplitPayment ? normalizedSplitPayments : null,
-        amountReceived: paymentMethod === 'cash' ? parseFloat(amountReceived) : isSplitPayment ? splitAmountReceived : grandTotal,
-        change: paymentMethod === 'cash' ? change : isSplitPayment ? Math.max(0, splitAmountReceived - grandTotal) : 0,
+        amountReceived: totalReceived,
+        change: paymentMethod === 'cash' ? cashChange : isSplitPayment ? Math.max(0, splitAmountReceived - grandTotal) : 0,
         customerName: customerName.trim() || null,
+        customerId: selectedCustomerId ? parseInt(selectedCustomerId) : null,
         employeeId: selectedEmployee.id,
         employeeName: selectedEmployee.name,
-        status: 'completed',
+        status: defaultStatus,
       }
 
-      const response = await fetch('/api/sales', {
+      const endpoint = isEditingOrder ? '/api/orders/convert' : submitEndpoint
+      const payload = isEditingOrder ? { orderId: loadedOrderId, saleData } : saleData
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(saleData),
+        body: JSON.stringify(payload),
       })
 
       const data = await response.json()
@@ -691,18 +940,27 @@ export default function EnhancedPOSPage() {
       // Print receipt automatically
       printReceipt(data.sale)
 
-      // Reset form
+      if (isEditingOrder) {
+        setLoadedOrderId(null)
+        setLoadedOrderPaid(0)
+        setLoadedOrderTotal(0)
+        setAutoAmountReceived(false)
+        router.replace('/dashboard/sales/create')
+      }
+
       setBillItems([])
       setAmountReceived("")
       setCustomerName("")
+      setSelectedCustomerId("")
+      setSelectedCustomerBalance(null)
       setGlobalDiscount(0)
       setSelectedEmployee(null)
       setLastSale(data.sale)
-      toast.success(`Sale completed! Total: ${formatCurrency(grandTotal)}`)
+      toast.success(`${entityLabel} completed! Total: ${formatCurrency(grandTotal)}`)
 
     } catch (error) {
       console.error('❌ Error completing sale:', error)
-      toast.error(`Failed to complete sale: ${error.message}`)
+      toast.error(`Failed to complete ${entityLabel.toLowerCase()}: ${error.message}`)
     } finally {
       setProcessingPayment(false)
     }
@@ -714,12 +972,12 @@ export default function EnhancedPOSPage() {
 
   useEffect(() => {
     // Load held sales from local storage on mount
-    const saved = localStorage.getItem('pos_held_sales')
+    const saved = localStorage.getItem(heldStorageKey)
     if (saved) {
       try {
         setHeldSales(JSON.parse(saved))
       } catch (e) {
-        console.error("Failed to parse held sales", e)
+        console.error(`Failed to parse held ${entityLabel.toLowerCase()}s`, e)
       }
     }
   }, [])
@@ -735,6 +993,7 @@ export default function EnhancedPOSPage() {
       timestamp: new Date().toISOString(),
       items: billItems,
       customerName,
+      customerId: selectedCustomerId,
       employee: selectedEmployee,
       paymentMethod,
       amountReceived,
@@ -744,11 +1003,12 @@ export default function EnhancedPOSPage() {
 
     const updatedHeldSales = [saleToHold, ...heldSales]
     setHeldSales(updatedHeldSales)
-    localStorage.setItem('pos_held_sales', JSON.stringify(updatedHeldSales))
+    localStorage.setItem(heldStorageKey, JSON.stringify(updatedHeldSales))
 
     // Clear current sale
     setBillItems([])
     setCustomerName("")
+    setSelectedCustomerId("")
     setGlobalDiscount(0)
     setAmountReceived("")
     setSplitPayments([])
@@ -756,8 +1016,8 @@ export default function EnhancedPOSPage() {
     setPaymentMethod("cash")
 
 
-    alert("Sale put on hold! You can recall it from the 'Recall Held' button.") // Kept for now, effectively harmless if we add toast
-    toast.success("Sale put on hold successfully!")
+    alert(`${entityLabel} put on hold! You can recall it from the 'Recall Held ${entityLabelPlural}' button.`)
+    toast.success(`${entityLabel} put on hold successfully!`)
   }
 
   const recallSale = (sale) => {
@@ -768,6 +1028,7 @@ export default function EnhancedPOSPage() {
     // Restore state
     setBillItems(sale.items)
     setCustomerName(sale.customerName || "")
+    setSelectedCustomerId(sale.customerId || "")
     setSelectedEmployee(sale.employee || null)
     setPaymentMethod(sale.paymentMethod || "cash")
     setAmountReceived(sale.amountReceived || "")
@@ -782,7 +1043,7 @@ export default function EnhancedPOSPage() {
   const deleteHeldSale = (id) => {
     const updated = heldSales.filter(s => s.id !== id)
     setHeldSales(updated)
-    localStorage.setItem('pos_held_sales', JSON.stringify(updated))
+    localStorage.setItem(heldStorageKey, JSON.stringify(updated))
   }
 
   return (
@@ -792,12 +1053,12 @@ export default function EnhancedPOSPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[80vh] flex flex-col">
             <div className="p-4 border-b flex justify-between items-center">
-              <h2 className="text-xl font-bold">Held Sales</h2>
+              <h2 className="text-xl font-bold">Held {entityLabelPlural}</h2>
               <button onClick={() => setShowRecallModal(false)} className="text-gray-500 hover:text-gray-700">✕</button>
             </div>
             <div className="p-4 overflow-y-auto flex-1">
               {heldSales.length === 0 ? (
-                <p className="text-center text-gray-500">No held sales found.</p>
+                <p className="text-center text-gray-500">No held {entityLabel.toLowerCase()}s found.</p>
               ) : (
                 <div className="space-y-3">
                   {heldSales.map(sale => (
@@ -833,10 +1094,67 @@ export default function EnhancedPOSPage() {
         </div>
       )}
 
+      {showOrderModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg w-full max-w-3xl max-h-[80vh] flex flex-col">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="text-xl font-bold">Load Order</h2>
+              <button onClick={() => setShowOrderModal(false)} className="text-gray-500 hover:text-gray-700">✕</button>
+            </div>
+            <div className="p-4 border-b">
+              <input
+                type="text"
+                value={orderSearch}
+                onChange={(e) => setOrderSearch(e.target.value)}
+                placeholder="Search by order #, customer, or phone"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              {loadingOrders ? (
+                <p className="text-center text-gray-500">Loading orders...</p>
+              ) : filteredOrders.length === 0 ? (
+                <p className="text-center text-gray-500">No booked orders found.</p>
+              ) : (
+                <div className="space-y-3">
+                  {filteredOrders.map(order => (
+                    <div key={order.id} className="border rounded p-3 flex justify-between items-center bg-gray-50 hover:bg-gray-100">
+                      <div>
+                        <p className="font-bold">Order #{order.id}</p>
+                        <p className="text-sm text-gray-600">
+                          {order.customerName || 'Walk-in'} · {order.items?.length || 0} items · {formatCurrency(order.total || 0)}
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          await loadOrder(order.id)
+                          setShowOrderModal(false)
+                        }}
+                        className="bg-indigo-600 text-white px-3 py-1 rounded text-sm hover:bg-indigo-700"
+                      >
+                        Load
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t text-right">
+              <button onClick={() => setShowOrderModal(false)} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Side - Product Selection */}
         <div className="flex-1 flex flex-col bg-white border-r border-gray-200 p-6">
+          {!isOrderMode && (loadingOrder || loadedOrderId) && (
+            <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+              {loadingOrder ? 'Loading order...' : `Loaded Order #${loadedOrderId}. Edit and complete the sale.`}
+            </div>
+          )}
 
           {/* Product Dropdown with Search */}
           <div className="mb-6">
@@ -867,7 +1185,7 @@ export default function EnhancedPOSPage() {
                   <div className="divide-y divide-gray-200">
                     {rankedProducts.map((product) => {
                       const variant = product.variants?.[0]
-                      const stock = parseInt(variant?.inventory_quantity || 0)
+                      const stock = product.variants?.reduce((sum, v) => sum + (v.inventory_quantity || 0), 0) ?? product.quantity ?? 0
                       const isOutOfStock = stock <= 0
 
                       return (
@@ -1064,22 +1382,47 @@ export default function EnhancedPOSPage() {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Select Employee <span className="text-red-500">*</span>
             </label>
-            <select
-              value={selectedEmployee?.id || ''}
-              onChange={(e) => {
-                const emp = employees.find(emp => emp.id === parseInt(e.target.value))
-                setSelectedEmployee(emp || null)
-              }}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="">-- Select Employee --</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name} {emp.phoneNumber ? `(${emp.phoneNumber})` : ''}
-                </option>
-              ))}
-            </select>
-            {selectedEmployee && (
+            <div className="relative">
+              <input
+                type="text"
+                value={employeeSearch}
+                onChange={(e) => {
+                  setEmployeeSearch(e.target.value)
+                  setSelectedEmployee(null)
+                }}
+                onFocus={() => setIsEmployeeDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setIsEmployeeDropdownOpen(false), 150)}
+                placeholder="Select employee"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              {isEmployeeDropdownOpen && (
+                <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {loadingEmployees ? (
+                    <div className="px-4 py-2 text-sm text-gray-500">Loading employees...</div>
+                  ) : filteredEmployees.length === 0 ? (
+                    <div className="px-4 py-2 text-sm text-gray-500">No employees found</div>
+                  ) : (
+                    filteredEmployees.map((emp) => (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setSelectedEmployee(emp)
+                          setEmployeeSearch(`${emp.name}${emp.phoneNumber ? ` (${emp.phoneNumber})` : ''}`)
+                          setIsEmployeeDropdownOpen(false)
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-50"
+                      >
+                        <span className="font-medium text-gray-900">{emp.name}</span>
+                        {emp.phoneNumber && <span className="ml-2 text-sm text-gray-500">({emp.phoneNumber})</span>}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            {selectedEmployee && !isOrderMode && (
               <p className="mt-1 text-xs text-green-600">
                 ✓ Commission will be recorded for {selectedEmployee.name}
               </p>
@@ -1090,16 +1433,66 @@ export default function EnhancedPOSPage() {
           <div className="mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Customer Name (Optional)
+                Customer (Optional)
               </label>
-              <input
-                type="text"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="Walk-in customer"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={customerSearch}
+                  onChange={(e) => {
+                    setCustomerSearch(e.target.value)
+                    setCustomerName(e.target.value)
+                    setSelectedCustomerId("")
+                    setSelectedCustomerBalance(null)
+                  }}
+                  onFocus={() => setIsCustomerDropdownOpen(true)}
+                  onBlur={() => setTimeout(() => setIsCustomerDropdownOpen(false), 150)}
+                  placeholder="Select customer or type name"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                {isCustomerDropdownOpen && (
+                  <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                    {loadingCustomers ? (
+                      <div className="px-4 py-2 text-sm text-gray-500">Loading customers...</div>
+                    ) : filteredCustomers.length === 0 ? (
+                      <div className="px-4 py-2 text-sm text-gray-500">No customers found</div>
+                    ) : (
+                      filteredCustomers.map((customer) => (
+                        <button
+                          key={customer.id}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setSelectedCustomerId(String(customer.id))
+                            setCustomerName(customer.name || "")
+                            setCustomerSearch(`${customer.name}${customer.phoneNumber ? ` (${customer.phoneNumber})` : ''}`)
+                            setSelectedCustomerBalance(parseFloat(customer.balance ?? 0))
+                            setIsCustomerDropdownOpen(false)
+                          }}
+                          className="w-full text-left px-4 py-2 hover:bg-gray-50"
+                        >
+                          <span className="font-medium text-gray-900">{customer.name}</span>
+                          {customer.phoneNumber && <span className="ml-2 text-sm text-gray-500">({customer.phoneNumber})</span>}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
+            {selectedCustomerId && selectedCustomerBalance !== null && (
+              <p className={`mt-1.5 text-xs font-semibold ${
+                selectedCustomerBalance > 0 ? 'text-red-600' :
+                selectedCustomerBalance < 0 ? 'text-green-600' :
+                'text-gray-500'
+              }`}>
+                {selectedCustomerBalance > 0
+                  ? `Balance due: Rs ${parseFloat(selectedCustomerBalance).toLocaleString('en-PK', { minimumFractionDigits: 2 })}`
+                  : selectedCustomerBalance < 0
+                    ? `Store credit: Rs ${Math.abs(parseFloat(selectedCustomerBalance)).toLocaleString('en-PK', { minimumFractionDigits: 2 })}`
+                    : 'No outstanding balance'}
+              </p>
+            )}
           </div>
 
           {/* Totals Summary */}
@@ -1113,6 +1506,23 @@ export default function EnhancedPOSPage() {
               <div className="flex justify-between text-sm text-gray-500 italic">
                 <span>Total Item Discounts:</span>
                 <span>{totalItemDiscounts.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
+
+            {!isOrderMode && loadedOrderId && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-sm text-gray-500">
+                  <span>Order Total:</span>
+                  <span>{loadedOrderTotal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-500">
+                  <span>Already Paid:</span>
+                  <span>{loadedOrderPaid.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between text-sm font-semibold text-gray-700">
+                  <span>Remaining:</span>
+                  <span>{remainingFromOrder.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                </div>
               </div>
             )}
 
@@ -1137,7 +1547,7 @@ export default function EnhancedPOSPage() {
             )}
 
             <div className="flex justify-between text-lg font-bold pt-2 border-t-2 border-gray-300">
-              <span className="text-gray-900">Grand Total:</span>
+              <span className="text-gray-900">{!isOrderMode && loadedOrderId ? 'Payable Now:' : 'Grand Total:'}</span>
               <span className="text-indigo-600">{grandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
             </div>
           </div>
@@ -1151,20 +1561,31 @@ export default function EnhancedPOSPage() {
                 className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white py-2 rounded font-semibold transition-colors flex items-center justify-center gap-2"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                Hold Sale
+                Hold {entityLabel}
               </button>
               <button
                 onClick={() => setShowRecallModal(true)}
                 className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded font-semibold transition-colors flex items-center justify-center gap-2 relative"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                Recall Held
+                Recall Held {entityLabelPlural}
                 {heldSales.length > 0 && (
                   <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">
                     {heldSales.length}
                   </span>
                 )}
               </button>
+              {!isOrderMode && (
+                <button
+                  onClick={() => {
+                    setShowOrderModal(true)
+                    fetchOrders()
+                  }}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded font-semibold transition-colors flex items-center justify-center gap-2"
+                >
+                  Load Order
+                </button>
+              )}
             </div>
 
             <div className="flex justify-between items-center text-lg font-bold mb-4">
@@ -1225,7 +1646,10 @@ export default function EnhancedPOSPage() {
                 <input
                   type="number"
                   value={amountReceived}
-                  onChange={(e) => setAmountReceived(e.target.value)}
+                  onChange={(e) => {
+                    setAutoAmountReceived(false)
+                    setAmountReceived(e.target.value)
+                  }}
                   placeholder="0.00"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-lg font-semibold"
                   step="0.01"
@@ -1335,7 +1759,7 @@ export default function EnhancedPOSPage() {
                   Processing...
                 </span>
               ) : (
-                `Complete Sale - ${grandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}`
+                `Complete ${entityLabel} - ${grandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}`
               )}
             </button>
 
@@ -1355,6 +1779,10 @@ export default function EnhancedPOSPage() {
               <button
                 onClick={() => {
                   setCustomerName("")
+                  setSelectedCustomerId("")
+                  setCustomerSearch("")
+                  setSelectedCustomerBalance(null)
+                  setEmployeeSearch("")
                   setAmountReceived("")
                   setSelectedEmployee(null)
                   setSplitPayments([])
@@ -1381,3 +1809,5 @@ export default function EnhancedPOSPage() {
     </div>
   )
 }
+
+export default EnhancedPOSPage
