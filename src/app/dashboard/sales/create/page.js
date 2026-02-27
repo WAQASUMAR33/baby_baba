@@ -951,10 +951,12 @@ export function EnhancedPOSPage({ mode = "sale" }) {
       setBillItems([])
       setAmountReceived("")
       setCustomerName("")
+      setCustomerSearch("")
       setSelectedCustomerId("")
       setSelectedCustomerBalance(null)
       setGlobalDiscount(0)
-      setSelectedEmployee(null)
+      setSplitPayments([])
+      setPaymentMethod("cash")
       setLastSale(data.sale)
       toast.success(`${entityLabel} completed! Total: ${formatCurrency(grandTotal)}`)
 
