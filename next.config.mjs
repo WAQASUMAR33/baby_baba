@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Mark heavy server-only packages as external to reduce serverless function bundle size
+  serverExternalPackages: ['mysql2', 'bcryptjs'],
   /* config options here */
   // Webpack configuration for compatibility
   // Note: Turbopack is disabled via --webpack flag in build script
@@ -14,11 +16,6 @@ const nextConfig = {
   },
   // Production optimizations
   productionBrowserSourceMaps: false,
-  // Optimize chunk loading
-  onDemandEntries: {
-    maxInactiveAge: 25 * 1000,
-    pagesBufferLength: 2,
-  },
   // Ensure environment variables are available
   env: {
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || 'vAyWrNiJupbyfq7fGtNJsSRM3SwzHcKsu435xHL6yWA=',
