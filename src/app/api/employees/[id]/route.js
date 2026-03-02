@@ -10,7 +10,8 @@ export async function GET(request, { params }) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const id = parseInt(params.id)
+    const { id: rawId } = await params
+    const id = parseInt(rawId)
     const employee = await getEmployeeById(id)
     if (!employee) {
       return NextResponse.json({ success: false, error: 'Employee not found' }, { status: 404 })
@@ -30,7 +31,8 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const id = parseInt(params.id)
+    const { id: rawId } = await params
+    const id = parseInt(rawId)
     const body = await request.json()
     const employee = await updateEmployee(id, body)
     return NextResponse.json({ success: true, employee })
@@ -47,7 +49,8 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const id = parseInt(params.id)
+    const { id: rawId } = await params
+    const id = parseInt(rawId)
     const success = await deleteEmployee(id)
     return NextResponse.json({ success, message: success ? 'Employee deleted' : 'Delete failed' })
   } catch (error) {

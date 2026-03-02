@@ -14,6 +14,7 @@ export async function GET(request) {
     const filters = {
       name: searchParams.get('name'),
       city: searchParams.get('city'),
+      status: searchParams.get('status'),
     }
 
     const [employees, stats] = await Promise.all([

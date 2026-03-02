@@ -41,7 +41,7 @@ export default function SalesPage() {
   const fetchEmployees = async () => {
     try {
       setLoadingEmployees(true)
-      const response = await fetch('/api/employees')
+      const response = await fetch('/api/employees?status=active')
       const data = await response.json()
       if (data.success) {
         setEmployees(data.employees || [])
@@ -852,9 +852,11 @@ export default function SalesPage() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Total
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Commission
-                      </th>
+                      {isAdmin && (
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Commission
+                        </th>
+                      )}
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Status
                       </th>
@@ -909,15 +911,17 @@ export default function SalesPage() {
                             </div>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {sale.commission ? (
-                            <span className="font-medium text-purple-600">
-                              Rs {parseFloat(sale.commission).toFixed(2)}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
-                        </td>
+                        {isAdmin && (
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {sale.commission ? (
+                              <span className="font-medium text-purple-600">
+                                Rs {parseFloat(sale.commission).toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                        )}
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${sale.status === 'completed'
                             ? 'bg-green-100 text-green-800'
@@ -1624,35 +1628,54 @@ export default function SalesPage() {
                                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
                                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
                                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
+                                  {isAdmin && (
+                                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Cost Price</th>
+                                  )}
                                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
                                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Subtotal</th>
+                                  {isAdmin && (
+                                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Profit</th>
+                                  )}
                                 </tr>
                               </thead>
                               <tbody className="bg-white divide-y divide-gray-200">
-                                {selectedSale.items.map((item, index) => (
-                                  <tr key={index} className="hover:bg-gray-50">
-                                    <td className="px-4 py-3">
-                                      <div className="flex items-center">
-                                        {item.image && (
-                                          <img
-                                            src={item.image}
-                                            alt={item.title}
-                                            className="w-12 h-12 rounded object-cover mr-3"
-                                          />
-                                        )}
-                                        <div>
-                                          <div className="text-sm font-medium text-gray-900">{item.title}</div>
+                                {selectedSale.items.map((item, index) => {
+                                  const itemSubtotal = parseFloat(item.price) * parseInt(item.quantity)
+                                  const itemCost = parseFloat(item.costPrice || 0) * parseInt(item.quantity)
+                                  const itemProfit = itemSubtotal - parseFloat(item.discount || 0) - itemCost
+                                  return (
+                                    <tr key={index} className="hover:bg-gray-50">
+                                      <td className="px-4 py-3">
+                                        <div className="flex items-center">
+                                          {item.image && (
+                                            <img
+                                              src={item.image}
+                                              alt={item.title}
+                                              className="w-12 h-12 rounded object-cover mr-3"
+                                            />
+                                          )}
+                                          <div>
+                                            <div className="text-sm font-medium text-gray-900">{item.title}</div>
+                                          </div>
                                         </div>
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-gray-500">{item.sku || '-'}</td>
-                                    <td className="px-4 py-3 text-sm text-right text-gray-900">{formatCurrency(item.price)}</td>
-                                    <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{item.quantity}</td>
-                                    <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
-                                      {formatCurrency(parseFloat(item.price) * parseInt(item.quantity))}
-                                    </td>
-                                  </tr>
-                                ))}
+                                      </td>
+                                      <td className="px-4 py-3 text-sm text-gray-500">{item.sku || '-'}</td>
+                                      <td className="px-4 py-3 text-sm text-right text-gray-900">{formatCurrency(item.price)}</td>
+                                      {isAdmin && (
+                                        <td className="px-4 py-3 text-sm text-right text-gray-500">{formatCurrency(item.costPrice || 0)}</td>
+                                      )}
+                                      <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{item.quantity}</td>
+                                      <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
+                                        {formatCurrency(itemSubtotal)}
+                                      </td>
+                                      {isAdmin && (
+                                        <td className={`px-4 py-3 text-sm text-right font-semibold ${itemProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                          {formatCurrency(itemProfit)}
+                                        </td>
+                                      )}
+                                    </tr>
+                                  )
+                                })}
                               </tbody>
                             </table>
                           </div>
@@ -1676,6 +1699,22 @@ export default function SalesPage() {
                             <span className="text-gray-900">Total:</span>
                             <span className="text-indigo-600">{formatCurrency(selectedSale.total)}</span>
                           </div>
+                          {isAdmin && (() => {
+                            const totalCost = (selectedSale.items || []).reduce((sum, item) => sum + parseFloat(item.costPrice || 0) * parseInt(item.quantity || 0), 0)
+                            const totalProfit = parseFloat(selectedSale.total) - totalCost
+                            return (
+                              <>
+                                <div className="flex justify-between text-sm pt-2 border-t border-gray-200">
+                                  <span className="text-gray-600">Total Cost:</span>
+                                  <span className="font-medium text-gray-700">{formatCurrency(totalCost)}</span>
+                                </div>
+                                <div className="flex justify-between text-sm font-semibold">
+                                  <span className="text-gray-700">Net Profit:</span>
+                                  <span className={totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}>{formatCurrency(totalProfit)}</span>
+                                </div>
+                              </>
+                            )
+                          })()}
                         </div>
                       </div>
                     </>

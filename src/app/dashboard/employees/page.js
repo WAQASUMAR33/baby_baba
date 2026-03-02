@@ -25,6 +25,7 @@ export default function EmployeesPage() {
     city: '',
     address: '',
     cnic: '',
+    status: 'active',
   })
 
   useEffect(() => {
@@ -61,6 +62,7 @@ export default function EmployeesPage() {
       city: '',
       address: '',
       cnic: '',
+      status: 'active',
     })
     setShowModal(true)
   }
@@ -74,6 +76,7 @@ export default function EmployeesPage() {
       city: employee.city || '',
       address: employee.address || '',
       cnic: employee.cnic || '',
+      status: employee.status || 'active',
     })
     setShowModal(true)
   }
@@ -210,6 +213,7 @@ export default function EmployeesPage() {
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Contact</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">City</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">CNIC</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
                   <th className="px-6 py-4 text-right text-xs font-semibold text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
@@ -236,6 +240,15 @@ export default function EmployeesPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {employee.cnic || "N/A"}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        (employee.status || 'active') === 'active'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {(employee.status || 'active') === 'active' ? 'Active' : 'Non-Active'}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button onClick={() => openEditModal(employee)} className="text-indigo-600 hover:text-indigo-900 mr-4">Edit</button>
                       <button onClick={() => handleDelete(employee)} className="text-red-600 hover:text-red-900">Delete</button>
@@ -244,7 +257,7 @@ export default function EmployeesPage() {
                 ))}
                 {employees.length === 0 && (
                   <tr>
-                    <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
                       No employees found.
                     </td>
                   </tr>
@@ -325,6 +338,17 @@ export default function EmployeesPage() {
                   className="w-full px-4 py-3 rounded-xl border-gray-200 focus:ring-indigo-500 focus:border-indigo-500 border transition-all text-gray-900 shadow-sm"
                   placeholder="Enter complete address"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Status</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  className="w-full px-4 py-3 rounded-xl border-gray-200 focus:ring-indigo-500 focus:border-indigo-500 border transition-all text-gray-900 shadow-sm"
+                >
+                  <option value="active">Active</option>
+                  <option value="non-active">Non-Active</option>
+                </select>
               </div>
               <div className="pt-4 flex gap-3">
                 <button

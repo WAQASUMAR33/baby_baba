@@ -18,6 +18,7 @@ const parseDatabaseUrl = (url) => {
 // Create connection pool
 let pool = null
 let hasSaleItemDiscountColumn = null
+let hasSaleItemCostPriceColumn = null
 let hasSalePaymentBreakdownColumn = null
 let hasSaleCustomerIdColumn = null
 let hasCustomerLedgerTable = null
@@ -113,6 +114,20 @@ async function ensureSaleItemDiscountColumn(connection) {
       hasSaleItemDiscountColumn = false
       return
     }
+    throw error
+  }
+}
+
+async function ensureSaleItemCostPriceColumn(connection) {
+  if (hasSaleItemCostPriceColumn !== null) return
+  try {
+    const { saleitem } = await getSalesTables()
+    if (!saleitem) { hasSaleItemCostPriceColumn = false; return }
+    await connection.execute(`ALTER TABLE \`${saleitem}\` ADD COLUMN \`costPrice\` DECIMAL(10,2) DEFAULT 0`)
+    hasSaleItemCostPriceColumn = true
+  } catch (error) {
+    if (error?.code === 'ER_DUP_FIELDNAME') { hasSaleItemCostPriceColumn = true; return }
+    if (error?.code === 'ER_NO_SUCH_TABLE') { hasSaleItemCostPriceColumn = false; return }
     throw error
   }
 }
@@ -432,6 +447,7 @@ export async function createSale(saleData, userId, options = {}) {
 
   try {
     await ensureSaleItemDiscountColumn(conn)
+    await ensureSaleItemCostPriceColumn(conn)
     await ensureSalePaymentBreakdownColumn(conn)
     await ensureSaleCustomerIdColumn(conn)
     await conn.beginTransaction()
@@ -448,13 +464,22 @@ export async function createSale(saleData, userId, options = {}) {
         return { ...item, commission: 0 };
       }
       const price = parseFloat(item.price);
-      const originalPrice = parseFloat(item.originalPrice || 0);
-      let itemCommissionPerUnit = 0;
+      const costPrice = parseFloat(item.originalPrice || 0);
 
-      if (price <= originalPrice) {
+      // No-commission thresholds based on cost price range:
+      // costPrice < 10,000 → need ≥20% markup; costPrice ≥ 10,000 → need ≥10% markup
+      if (costPrice > 0) {
+        const threshold = costPrice < 10000 ? costPrice * 1.2 : costPrice * 1.1;
+        if (price < threshold) {
+          return { ...item, commission: 0 };
+        }
+      }
+
+      let itemCommissionPerUnit = 0;
+      if (price <= costPrice) {
         itemCommissionPerUnit = price * 0.01;
       } else {
-        itemCommissionPerUnit = (originalPrice * 0.01) + ((price - originalPrice) * 0.10);
+        itemCommissionPerUnit = (costPrice * 0.01) + ((price - costPrice) * 0.10);
       }
 
       const itemTotalCommission = itemCommissionPerUnit * item.quantity;
@@ -529,7 +554,25 @@ export async function createSale(saleData, userId, options = {}) {
     for (const item of itemsWithCommission) {
       // Some DBs may not yet have the `commission` column on SaleItem.
       // Try with commission first, then gracefully fallback without it.
+      const costPrice = parseFloat(item.originalPrice || item.costPrice || 0)
       const insertVariants = [
+        {
+          query: `INSERT INTO ${saleitem || 'SaleItem'} (saleId, productId, variantId, title, price, costPrice, quantity, discount, commission, sku, image, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          params: [
+            saleId,
+            String(item.productId),
+            String(item.variantId),
+            item.title,
+            item.price,
+            costPrice,
+            item.quantity,
+            parseFloat(item.discount || 0),
+            item.commission,
+            item.sku || null,
+            item.image || null,
+          ],
+        },
         {
           query: `INSERT INTO ${saleitem || 'SaleItem'} (saleId, productId, variantId, title, price, quantity, discount, commission, sku, image, createdAt)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
@@ -666,6 +709,7 @@ export async function updateSaleWithItems(saleId, saleData, options = {}) {
 
   try {
     await ensureSaleItemDiscountColumn(conn)
+    await ensureSaleItemCostPriceColumn(conn)
     await ensureSalePaymentBreakdownColumn(conn)
     await ensureSaleCustomerIdColumn(conn)
     await conn.beginTransaction()
@@ -690,13 +734,22 @@ export async function updateSaleWithItems(saleId, saleData, options = {}) {
         return { ...item, commission: 0 }
       }
       const price = parseFloat(item.price)
-      const originalPrice = parseFloat(item.originalPrice || 0)
-      let itemCommissionPerUnit = 0
+      const costPrice = parseFloat(item.originalPrice || 0)
 
-      if (price <= originalPrice) {
+      // No-commission thresholds based on cost price range:
+      // costPrice < 10,000 → need ≥20% markup; costPrice ≥ 10,000 → need ≥10% markup
+      if (costPrice > 0) {
+        const threshold = costPrice < 10000 ? costPrice * 1.2 : costPrice * 1.1
+        if (price < threshold) {
+          return { ...item, commission: 0 }
+        }
+      }
+
+      let itemCommissionPerUnit = 0
+      if (price <= costPrice) {
         itemCommissionPerUnit = price * 0.01
       } else {
-        itemCommissionPerUnit = (originalPrice * 0.01) + ((price - originalPrice) * 0.10)
+        itemCommissionPerUnit = (costPrice * 0.01) + ((price - costPrice) * 0.10)
       }
 
       const itemTotalCommission = itemCommissionPerUnit * item.quantity
@@ -943,9 +996,10 @@ export async function applySaleReturnFinance(sale, returnItems = [], options = {
       [ledgerAmount, customerId]
     )
     const referenceType = sale.status === 'order' ? 'order-return' : 'sale-return'
+    // Store return total as negative to indicate a refund/return transaction
     await conn.execute(
       `INSERT INTO CustomerLedger (customerId, referenceId, referenceType, total, paid, due, debit, credit) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [customerId, sale.id, referenceType, ledgerAmount, ledgerAmount, 0, 0, ledgerAmount]
+      [customerId, sale.id, referenceType, -ledgerAmount, ledgerAmount, 0, 0, ledgerAmount]
     )
     await conn.commit()
     return { returnAmount, ledgerAmount, applied: true, customerId }
@@ -1316,9 +1370,45 @@ export async function getCustomerLedger(filters = {}) {
   }
 }
 
+export async function createManualLedgerEntry({ customerId, amount, type, description }) {
+  const connection = getPool()
+  const conn = await connection.getConnection()
+  try {
+    await conn.beginTransaction()
+    await ensureCustomerLedgerTable(conn)
+    await ensureCustomerLedgerDebitCreditColumns(conn)
+    const customerTable = await getCustomerTable()
+    if (!customerTable) throw new Error('Customer table not found')
+
+    const debit = type === 'debit' ? amount : 0
+    const credit = type === 'credit' ? amount : 0
+    const balanceDelta = debit - credit
+
+    // Update customer balance
+    await conn.execute(
+      `UPDATE ${customerTable} SET balance = balance + ? WHERE id = ?`,
+      [balanceDelta, customerId]
+    )
+
+    // Insert ledger entry
+    const [result] = await conn.execute(
+      `INSERT INTO CustomerLedger (customerId, referenceId, referenceType, total, paid, due, debit, credit) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)`,
+      [customerId, 'manual', amount, 0, amount, debit, credit]
+    )
+    await conn.commit()
+    return { id: result.insertId, customerId, type, amount, description }
+  } catch (error) {
+    await conn.rollback()
+    throw error
+  } finally {
+    conn.release()
+  }
+}
+
 export default {
   findUserByEmail,
   createSale,
   getSales,
   getCustomerLedger,
+  createManualLedgerEntry,
 }

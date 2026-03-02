@@ -6,7 +6,6 @@ import { toast } from "react-hot-toast";
 const fmt = (v) => Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (v) => {
     const d = new Date(v);
-    // Add UTC offset so DATE-only values aren't shifted by local timezone
     const utc = new Date(d.getTime() + d.getTimezoneOffset() * 60000);
     return utc.toLocaleDateString("en-GB");
 };
@@ -18,7 +17,7 @@ export default function DayEndPage() {
     const [historyLoading, setHistoryLoading] = useState(false);
     const [history, setHistory] = useState([]);
     const [data, setData] = useState(null);
-    const [dailyCash, setDailyCash] = useState("");
+    const [withdrawAmount, setWithdrawAmount] = useState("");
 
     useEffect(() => { fetchDayEndData(date); }, [date]);
     useEffect(() => { fetchHistory(); }, []);
@@ -30,8 +29,7 @@ export default function DayEndPage() {
             if (!res.ok) throw new Error("Failed to fetch");
             const result = await res.json();
             setData(result);
-            // Pre-fill dailyCash if a saved record exists
-            setDailyCash(result.id ? String(parseFloat(result.dailyCash) || "") : "");
+            setWithdrawAmount(result.id ? String(parseFloat(result.withdrawAmount) || "") : "");
         } catch (err) {
             console.error(err);
             toast.error("Error loading day end data");
@@ -68,7 +66,7 @@ export default function DayEndPage() {
                     totalExpenses:  data.totalExpenses,
                     totalSales:     data.totalSales,
                     cashSales:      data.cashSales,
-                    dailyCash:      parseFloat(dailyCash) || 0,
+                    withdrawAmount: parseFloat(withdrawAmount) || 0,
                 }),
             });
             if (!res.ok) throw new Error("Failed to save");
@@ -83,15 +81,15 @@ export default function DayEndPage() {
         }
     };
 
-    // Derived values (computed from live data + user input)
-    const openingBalance  = parseFloat(data?.openingBalance  || 0);
-    const totalSales      = parseFloat(data?.totalSales      || 0);
-    const cashSales       = parseFloat(data?.cashSales       || 0);
-    const cardOtherSales  = totalSales - cashSales;
-    const totalExpenses   = parseFloat(data?.totalExpenses   || 0);
-    const expectedClosing = parseFloat((openingBalance + totalSales - totalExpenses).toFixed(2));
-    const physicalCount   = parseFloat(dailyCash) || 0;
-    const variance        = parseFloat((physicalCount - expectedClosing).toFixed(2));
+    // Derived values
+    const openingBalance = parseFloat(data?.openingBalance || 0);
+    const totalSales     = parseFloat(data?.totalSales     || 0);
+    const cashSales      = parseFloat(data?.cashSales      || 0);
+    const cardOtherSales = totalSales - cashSales;
+    const totalExpenses  = parseFloat(data?.totalExpenses  || 0);
+    const withdraw       = parseFloat(withdrawAmount) || 0;
+    // closing = opening + expenses + sales - withdraw
+    const closingBalance = parseFloat((openingBalance + totalExpenses + totalSales - withdraw).toFixed(2));
 
     return (
         <div className="p-6 max-w-5xl mx-auto">
@@ -120,62 +118,30 @@ export default function DayEndPage() {
                         <StatCard label="Total Expenses" value={totalExpenses} color="red" note={`Logged expenses for ${date}`} />
                     </div>
 
-                    {/* ── Row 2: Expected closing (computed) ──────────── */}
-                    <div className="bg-gray-50 rounded-lg border p-5">
-                        <p className="text-sm text-gray-500 mb-1 font-medium">Expected Cash in Drawer</p>
-                        <p className="text-3xl font-bold text-gray-800">Rs. {fmt(expectedClosing)}</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                            Opening ({fmt(openingBalance)}) + Sales ({fmt(totalSales)}) − Expenses ({fmt(totalExpenses)})
+                    {/* ── Row 2: Withdraw input ────────────────────────── */}
+                    <div className="bg-white rounded-lg border shadow-sm p-5 max-w-sm">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Withdraw Amount
+                        </label>
+                        <input
+                            type="number"
+                            value={withdrawAmount}
+                            onChange={(e) => setWithdrawAmount(e.target.value)}
+                            className="w-full p-3 border rounded-lg text-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                            placeholder="0.00"
+                            min="0"
+                        />
+                        <p className="text-xs text-gray-400 mt-2">
+                            Amount withdrawn (deducted from closing balance).
                         </p>
                     </div>
 
-                    {/* ── Row 3: Manual count + variance ──────────────── */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="bg-white rounded-lg border shadow-sm p-5">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Physical Cash Count (Closing Count)
-                            </label>
-                            <input
-                                type="number"
-                                value={dailyCash}
-                                onChange={(e) => setDailyCash(e.target.value)}
-                                className="w-full p-3 border rounded-lg text-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="0.00"
-                                min="0"
-                            />
-                            <p className="text-xs text-gray-400 mt-2">
-                                Count the cash in the drawer and enter the total here.
-                            </p>
-                        </div>
-
-                        <div className={`rounded-lg border p-5 flex flex-col justify-center ${variance >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
-                            <p className="text-sm font-medium text-gray-600 mb-1">
-                                Variance (Count − Expected)
-                            </p>
-                            <p className={`text-3xl font-bold ${variance >= 0 ? "text-green-700" : "text-red-700"}`}>
-                                {variance >= 0 ? "+" : ""}Rs. {fmt(Math.abs(variance))}
-                                <span className="text-base font-normal ml-2">
-                                    {variance >= 0 ? "Over" : "Short"}
-                                </span>
-                            </p>
-                            <p className="text-xs text-gray-400 mt-2">
-                                {variance === 0
-                                    ? "Cash matches perfectly."
-                                    : variance > 0
-                                    ? "More cash than expected."
-                                    : "Less cash than expected — check for missing entries."}
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* ── Row 4: Closing balance summary ──────────────── */}
+                    {/* ── Row 3: Closing balance summary ──────────────── */}
                     <div className="bg-blue-50 border border-blue-100 rounded-lg p-6 flex flex-col items-center">
                         <h3 className="text-lg font-medium text-blue-800 mb-1">Closing Balance</h3>
-                        <p className="text-4xl font-bold text-blue-900">Rs. {fmt(physicalCount || expectedClosing)}</p>
+                        <p className="text-4xl font-bold text-blue-900">Rs. {fmt(closingBalance)}</p>
                         <p className="text-sm text-blue-600 mt-2">
-                            {physicalCount > 0
-                                ? "Physical count — this becomes tomorrow's Opening Balance."
-                                : "Enter physical cash count above to confirm closing."}
+                            Opening ({fmt(openingBalance)}) + Expenses ({fmt(totalExpenses)}) + Sales ({fmt(totalSales)}) − Withdraw ({fmt(withdraw)})
                         </p>
                     </div>
 
@@ -204,7 +170,7 @@ export default function DayEndPage() {
                                         <th className="px-4 py-3 text-right font-medium">Opening</th>
                                         <th className="px-4 py-3 text-right font-medium">Sales</th>
                                         <th className="px-4 py-3 text-right font-medium">Expenses</th>
-                                        <th className="px-4 py-3 text-right font-medium">Count</th>
+                                        <th className="px-4 py-3 text-right font-medium">Withdraw</th>
                                         <th className="px-4 py-3 text-right font-medium">Closing</th>
                                     </tr>
                                 </thead>
@@ -222,7 +188,7 @@ export default function DayEndPage() {
                                                 <td className="px-4 py-3 text-right text-gray-700">Rs. {fmt(r.openingBalance)}</td>
                                                 <td className="px-4 py-3 text-right text-green-700">Rs. {fmt(r.totalSales)}</td>
                                                 <td className="px-4 py-3 text-right text-red-600">Rs. {fmt(r.totalExpenses)}</td>
-                                                <td className="px-4 py-3 text-right text-gray-700">Rs. {fmt(r.dailyCash)}</td>
+                                                <td className="px-4 py-3 text-right text-orange-600">Rs. {fmt(r.withdrawAmount)}</td>
                                                 <td className="px-4 py-3 text-right font-semibold text-gray-900">Rs. {fmt(r.closingBalance)}</td>
                                             </tr>
                                         ))

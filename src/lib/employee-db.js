@@ -35,6 +35,8 @@ function getPool() {
 }
 
 let employeeTableCache = null
+let hasStatusColumn = null
+
 async function getEmployeeTable() {
   if (employeeTableCache !== null) return employeeTableCache
   const connection = getPool()
@@ -50,14 +52,30 @@ async function getEmployeeTable() {
   return null
 }
 
+async function ensureStatusColumn(connection) {
+  if (hasStatusColumn !== null) return
+  const employeeTable = await getEmployeeTable()
+  if (!employeeTable) { hasStatusColumn = false; return }
+  try {
+    await connection.execute(`ALTER TABLE \`${employeeTable}\` ADD COLUMN \`status\` VARCHAR(20) NOT NULL DEFAULT 'active'`)
+    hasStatusColumn = true
+  } catch (error) {
+    if (error?.code === 'ER_DUP_FIELDNAME') { hasStatusColumn = true; return }
+    if (error?.code === 'ER_NO_SUCH_TABLE') { hasStatusColumn = false; return }
+    throw error
+  }
+}
+
 export async function getAllEmployees(filters = {}) {
   try {
     const connection = getPool()
     const employeeTable = await getEmployeeTable()
     if (!employeeTable) return []
+    await ensureStatusColumn(connection)
 
     let query = `
-      SELECT id, name, phone_number as phoneNumber, city, address, cnic, createdAt, updatedAt
+      SELECT id, name, phone_number as phoneNumber, city, address, cnic,
+             COALESCE(status, 'active') as status, createdAt, updatedAt
       FROM ${employeeTable}
       WHERE 1=1
     `
@@ -71,6 +89,11 @@ export async function getAllEmployees(filters = {}) {
     if (filters.city) {
       query += ' AND city = ?'
       params.push(filters.city)
+    }
+
+    if (filters.status) {
+      query += ' AND COALESCE(status, \'active\') = ?'
+      params.push(filters.status)
     }
 
     query += ' ORDER BY createdAt DESC'
@@ -89,7 +112,7 @@ export async function getEmployeeById(id) {
     const employeeTable = await getEmployeeTable()
     if (!employeeTable) return null
     const [employees] = await connection.execute(
-      `SELECT id, name, phone_number as phoneNumber, city, address, cnic, createdAt, updatedAt FROM ${employeeTable} WHERE id = ?`,
+      `SELECT id, name, phone_number as phoneNumber, city, address, cnic, COALESCE(status, 'active') as status, createdAt, updatedAt FROM ${employeeTable} WHERE id = ?`,
       [id]
     )
     return employees[0] || null
@@ -104,11 +127,24 @@ export async function createEmployee(data) {
     const connection = getPool()
     const employeeTable = await getEmployeeTable()
     if (!employeeTable) throw new Error('Employee table not found in database')
-    const [result] = await connection.execute(
-      `INSERT INTO ${employeeTable} (name, phone_number, city, address, cnic) VALUES (?, ?, ?, ?, ?)`,
-      [data.name, data.phoneNumber, data.city, data.address, data.cnic || null]
-    )
-    return await getEmployeeById(result.insertId)
+    await ensureStatusColumn(connection)
+    const status = data.status || 'active'
+    let inserted = false
+    // Try with status column first, fall back without it
+    for (const attempt of [
+      { q: `INSERT INTO ${employeeTable} (name, phone_number, city, address, cnic, status) VALUES (?, ?, ?, ?, ?, ?)`, p: [data.name, data.phoneNumber, data.city, data.address, data.cnic || null, status] },
+      { q: `INSERT INTO ${employeeTable} (name, phone_number, city, address, cnic) VALUES (?, ?, ?, ?, ?)`, p: [data.name, data.phoneNumber, data.city, data.address, data.cnic || null] },
+    ]) {
+      try {
+        const [result] = await connection.execute(attempt.q, attempt.p)
+        inserted = result.insertId
+        break
+      } catch (err) {
+        if (err?.code !== 'ER_BAD_FIELD_ERROR') throw err
+      }
+    }
+    if (!inserted) throw new Error('Failed to insert employee')
+    return await getEmployeeById(inserted)
   } catch (error) {
     console.error('❌ Error creating employee:', error)
     throw error
@@ -120,6 +156,7 @@ export async function updateEmployee(id, data) {
     const connection = getPool()
     const employeeTable = await getEmployeeTable()
     if (!employeeTable) return null
+    await ensureStatusColumn(connection)
     const updates = []
     const params = []
 
@@ -128,6 +165,7 @@ export async function updateEmployee(id, data) {
     if (data.city) { updates.push('city = ?'); params.push(data.city); }
     if (data.address) { updates.push('address = ?'); params.push(data.address); }
     if (data.cnic !== undefined) { updates.push('cnic = ?'); params.push(data.cnic); }
+    if (data.status !== undefined) { updates.push('status = ?'); params.push(data.status); }
 
     if (updates.length === 0) return await getEmployeeById(id)
 

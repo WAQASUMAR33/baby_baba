@@ -81,6 +81,35 @@ export async function GET(request) {
             return NextResponse.json({ success: true, vendors: vendorRows.map(r => r.vendor) });
         }
 
+        // Analytics-only endpoint
+        if (searchParams.get('analyticsOnly') === 'true') {
+            const [totalRow] = await pool.execute(
+                `SELECT COUNT(DISTINCT p.id) as totalProducts FROM \`${product}\` p`
+            );
+            const [lowStockRow] = await pool.execute(
+                `SELECT COUNT(*) as lowStockProducts FROM (
+                    SELECT p.id, SUM(COALESCE(v.inventory_quantity, 0)) as stock_total
+                    FROM \`${product}\` p
+                    LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
+                    GROUP BY p.id
+                    HAVING stock_total > 0 AND stock_total <= 10
+                ) as low_sub`
+            );
+            const [costRow] = await pool.execute(
+                `SELECT
+                    COALESCE(SUM(v.compare_at_price * GREATEST(v.inventory_quantity, 0)), 0) as totalCostValue,
+                    COALESCE(SUM(v.price * GREATEST(v.inventory_quantity, 0)), 0) as totalSaleValue
+                FROM \`${productvariant}\` v`
+            );
+            return NextResponse.json({
+                success: true,
+                totalProducts: totalRow[0]?.totalProducts || 0,
+                lowStockProducts: lowStockRow[0]?.lowStockProducts || 0,
+                totalCostValue: parseFloat(costRow[0]?.totalCostValue || 0),
+                totalSaleValue: parseFloat(costRow[0]?.totalSaleValue || 0),
+            });
+        }
+
         await ensureProductBarcodeColumn();
 
         const search = searchParams.get('search') || '';
@@ -108,7 +137,7 @@ export async function GET(request) {
 
         const baseSelect = `
       SELECT p.id, p.title, p.vendor, p.product_type, p.status, p.handle, p.updatedAt,
-             p.original_price, p.sale_price, p.quantity, p.categoryId, p.barcode as product_barcode
+             p.original_price, p.sale_price, p.cost_price, p.quantity, p.categoryId, p.barcode as product_barcode
              ${joinCategory !== 'none' ? ', c.name as categoryName' : ''},
              v.id as variant_id, v.title as variant_title, v.price, v.compare_at_price,
              v.sku, v.barcode, v.inventory_quantity, v.weight, v.weight_unit
@@ -283,6 +312,7 @@ export async function GET(request) {
                     handle: row.handle,
                     sale_price: row.sale_price,
                     original_price: row.original_price,
+                    cost_price: row.cost_price,
                     quantity: row.quantity,
                     categoryId: row.categoryId,
                     categoryName: row.categoryName || null,
@@ -415,6 +445,39 @@ export async function POST(request) {
         }, { status: 201 });
     } catch (error) {
         console.error('❌ Error creating product:', error);
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+}
+
+// DELETE /api/products?stock=low-stock  — bulk-delete all low-stock products
+export async function DELETE(request) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const stock = searchParams.get('stock');
+        if (stock !== 'low-stock') {
+            return NextResponse.json({ success: false, error: 'Only low-stock bulk delete is supported' }, { status: 400 });
+        }
+        const pool = getPool();
+        const { product, productvariant } = await getTableNames();
+
+        // Find all low-stock product IDs (0 < stock_total <= 10)
+        const [idRows] = await pool.execute(
+            `SELECT p.id FROM \`${product}\` p
+             LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
+             GROUP BY p.id
+             HAVING SUM(COALESCE(v.inventory_quantity, 0)) > 0 AND SUM(COALESCE(v.inventory_quantity, 0)) <= 10`
+        );
+        if (idRows.length === 0) {
+            return NextResponse.json({ success: true, deleted: 0 });
+        }
+        const ids = idRows.map(r => r.id);
+        const placeholders = ids.map(() => '?').join(',');
+        // Delete variants first (FK constraint), then products
+        await pool.execute(`DELETE FROM \`${productvariant}\` WHERE productId IN (${placeholders})`, ids);
+        const [result] = await pool.execute(`DELETE FROM \`${product}\` WHERE id IN (${placeholders})`, ids);
+        return NextResponse.json({ success: true, deleted: result.affectedRows });
+    } catch (error) {
+        console.error('❌ Error deleting low-stock products:', error);
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }

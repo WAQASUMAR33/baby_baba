@@ -37,6 +37,11 @@ export default function ProductsPage() {
   // Out-of-stock state: tracks which product ID is currently being processed
   const [outOfStockLoading, setOutOfStockLoading] = useState(null)
 
+  // Analytics
+  const [analytics, setAnalytics] = useState(null)
+  const [analyticsLoading, setAnalyticsLoading] = useState(true)
+  const [deletingLowStock, setDeletingLowStock] = useState(false)
+
   // Sync state
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
@@ -89,11 +94,42 @@ export default function ProductsPage() {
     fetchProducts()
   }, [fetchProducts])
 
-  // Load categories and vendors once on mount
+  // Load categories, vendors, and analytics once on mount
   useEffect(() => {
     fetchCategories()
     fetchVendors()
+    fetchAnalytics()
   }, [])
+
+  const fetchAnalytics = async () => {
+    setAnalyticsLoading(true)
+    try {
+      const res = await fetch('/api/products?analyticsOnly=true', { cache: 'no-store' })
+      const data = await res.json()
+      if (data.success) setAnalytics(data)
+    } catch {}
+    finally { setAnalyticsLoading(false) }
+  }
+
+  const handleDeleteLowStock = async () => {
+    if (!confirm('Are you sure you want to delete ALL low stock products? This action cannot be undone.')) return
+    setDeletingLowStock(true)
+    try {
+      const res = await fetch('/api/products?stock=low-stock', { method: 'DELETE' })
+      const data = await res.json()
+      if (data.success) {
+        alert(`✅ Deleted ${data.deleted} low stock product(s).`)
+        fetchProducts()
+        fetchAnalytics()
+      } else {
+        alert('❌ ' + (data.error || 'Failed to delete low stock products'))
+      }
+    } catch (err) {
+      alert('❌ ' + err.message)
+    } finally {
+      setDeletingLowStock(false)
+    }
+  }
 
   const fetchVendors = async () => {
     try {
@@ -475,6 +511,32 @@ export default function ProductsPage() {
               {loading ? 'Loading...' : 'Refresh'}
             </button>
           </div>
+        </div>
+
+        {/* Analytics Cards */}
+        <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Products', value: analyticsLoading ? '--' : (analytics?.totalProducts ?? 0), color: 'indigo' },
+            { label: 'Low Stock Products', value: analyticsLoading ? '--' : (analytics?.lowStockProducts ?? 0), color: 'yellow' },
+            { label: 'Total Cost Value', value: analyticsLoading ? '--' : `Rs ${Number(analytics?.totalCostValue || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, color: 'red' },
+            { label: 'Total Sale Value', value: analyticsLoading ? '--' : `Rs ${Number(analytics?.totalSaleValue || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, color: 'green' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className={`bg-white rounded-xl border border-gray-100 shadow-sm p-4`}>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">{label}</p>
+              <p className={`mt-1 text-xl font-bold text-${color}-600`}>{value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Delete Low Stock Button */}
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={handleDeleteLowStock}
+            disabled={deletingLowStock || analyticsLoading || (analytics?.lowStockProducts ?? 0) === 0}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+          >
+            {deletingLowStock ? 'Deleting...' : `Delete All Low Stock (${analytics?.lowStockProducts ?? 0})`}
+          </button>
         </div>
 
         {/* Sync Result Toast */}

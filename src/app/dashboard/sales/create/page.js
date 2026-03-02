@@ -47,6 +47,7 @@ export function EnhancedPOSPage({ mode = "sale" }) {
   const [customerName, setCustomerName] = useState("")
   const [processingPayment, setProcessingPayment] = useState(false)
   const [lastSale, setLastSale] = useState(null)
+  const [lastSaleCustomerBalance, setLastSaleCustomerBalance] = useState(null)
   const [loadedOrderId, setLoadedOrderId] = useState(null)
   const [loadingOrder, setLoadingOrder] = useState(false)
   const [orders, setOrders] = useState([])
@@ -109,7 +110,7 @@ export function EnhancedPOSPage({ mode = "sale" }) {
   const fetchEmployees = async () => {
     try {
       setLoadingEmployees(true)
-      const response = await fetch('/api/employees')
+      const response = await fetch('/api/employees?status=active')
       const data = await response.json()
       if (data.success) {
         setEmployees(data.employees || [])
@@ -183,6 +184,7 @@ export function EnhancedPOSPage({ mode = "sale" }) {
           variantId: item.variantId,
           productName: item.title || product?.title || 'Item',
           unitRate,
+          costPrice: parseFloat(item.costPrice || product?.cost_price || variant?.compare_at_price || 0),
           quantity,
           total,
           discount,
@@ -386,6 +388,7 @@ export function EnhancedPOSPage({ mode = "sale" }) {
         variantId: variant.id,
         productName: selectedProduct.title,
         unitRate: unitRate,
+        costPrice: parseFloat(selectedProduct.cost_price || variant.compare_at_price || 0),
         quantity: 1,
         total: unitRate,
         discount: 0,
@@ -494,6 +497,24 @@ export function EnhancedPOSPage({ mode = "sale" }) {
   const subtotal = billItems.reduce((sum, item) => sum + item.netTotal, 0)
   const totalItemDiscounts = billItems.reduce((sum, item) => sum + item.discount, 0)
   const globalDiscountAmount = parseFloat(globalDiscount) || 0
+  // Commission preview: mirrors the backend formula with no-commission thresholds.
+  // - costPrice < 10,000: need ≥20% markup (sale_price ≥ costPrice * 1.2), else no commission
+  // - costPrice ≥ 10,000: need ≥10% markup (sale_price ≥ costPrice * 1.1), else no commission
+  // - Then: 1% of costPrice + 10% of markup above costPrice
+  const estimatedCommission = !isOrderMode && selectedEmployee
+    ? billItems.reduce((sum, item) => {
+        const price = item.unitRate
+        const costPrice = item.costPrice || 0
+        if (costPrice > 0) {
+          const threshold = costPrice < 10000 ? costPrice * 1.2 : costPrice * 1.1
+          if (price < threshold) return sum
+        }
+        const commissionPerUnit = price <= costPrice
+          ? price * 0.01
+          : (costPrice * 0.01) + ((price - costPrice) * 0.10)
+        return sum + commissionPerUnit * item.quantity
+      }, 0)
+    : 0
   const baseGrandTotal = subtotal - globalDiscountAmount
   const paidOffset = !isOrderMode && loadedOrderId ? loadedOrderPaid : 0
   const grandTotal = Math.max(0, baseGrandTotal - paidOffset)
@@ -533,7 +554,7 @@ export function EnhancedPOSPage({ mode = "sale" }) {
     }
   }
 
-  const printReceipt = (sale) => {
+  const printReceipt = (sale, customerBalance = null) => {
     if (!sale) return
 
     // Create a new window for printing
@@ -543,6 +564,9 @@ export function EnhancedPOSPage({ mode = "sale" }) {
       alert('Please allow popups to print the receipt')
       return
     }
+
+    const isOrder = sale.status === 'order'
+    const effectiveBalance = customerBalance !== null ? customerBalance : selectedCustomerBalance
 
     // Generate receipt HTML
     const paymentBreakdownItems = parsePaymentBreakdown(sale.paymentBreakdown)
@@ -559,7 +583,7 @@ export function EnhancedPOSPage({ mode = "sale" }) {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Receipt #${sale.id}</title>
+          <title>${isOrder ? 'Order' : 'Receipt'} #${sale.id}</title>
           <style>
             * {
               margin: 0;
@@ -693,7 +717,7 @@ export function EnhancedPOSPage({ mode = "sale" }) {
           <!-- Receipt Info -->
           <div class="print-section">
             <div>
-              <strong>Receipt #:</strong>
+              <strong>${isOrder ? 'Order' : 'Receipt'} #:</strong>
               <span>${sale.id || 'N/A'}</span>
             </div>
             <div>
@@ -784,7 +808,7 @@ export function EnhancedPOSPage({ mode = "sale" }) {
             </div>
             ` : ''}
             <div class="print-total">
-              <span>TOTAL:</span>
+              <span>${isOrder ? 'ORDER TOTAL' : 'TOTAL'}:</span>
               <span>${formatCurrency(sale.total || 0)}</span>
             </div>
           </div>
@@ -793,6 +817,17 @@ export function EnhancedPOSPage({ mode = "sale" }) {
 
           <!-- Payment Info -->
           <div class="print-section">
+            ${isOrder ? `
+            <div><span>Order Amount:</span><span>${formatCurrency(sale.total || 0)}</span></div>
+            <div><span>Advance Payment:</span><span>${formatCurrency(sale.amountReceived || 0)}</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:10pt;border-top:1px solid #000;margin-top:4px;padding-top:4px;">
+              <span>Remaining Amount:</span>
+              <span>${formatCurrency(Math.max(0, parseFloat(sale.total || 0) - parseFloat(sale.amountReceived || 0)))}</span>
+            </div>
+            ${effectiveBalance !== null ? `
+            <div style="margin-top:4px;"><span>Current Balance:</span><span>${formatCurrency(parseFloat(effectiveBalance || 0) + Math.max(0, parseFloat(sale.total || 0) - parseFloat(sale.amountReceived || 0)))}</span></div>
+            ` : ''}
+            ` : `
             <div>
               <span>Payment Method:</span>
               <span style="text-transform: capitalize;">${sale.paymentMethod || 'N/A'}</span>
@@ -808,6 +843,7 @@ export function EnhancedPOSPage({ mode = "sale" }) {
               <span>${formatCurrency(sale.change)}</span>
             </div>
             ` : ''}
+            `}
           </div>
 
           <div class="print-divider"></div>
@@ -901,6 +937,7 @@ export function EnhancedPOSPage({ mode = "sale" }) {
           variantId: item.variantId,
           title: item.productName,
           price: item.unitRate,
+          originalPrice: item.costPrice || 0,
           quantity: item.quantity,
           discount: item.discount,
           sku: item.sku
@@ -937,8 +974,10 @@ export function EnhancedPOSPage({ mode = "sale" }) {
         throw new Error(data.error || 'Failed to save sale')
       }
 
+      const savedRecord = data.sale || data.order
+
       // Print receipt automatically
-      printReceipt(data.sale)
+      printReceipt(savedRecord)
 
       if (isEditingOrder) {
         setLoadedOrderId(null)
@@ -957,7 +996,8 @@ export function EnhancedPOSPage({ mode = "sale" }) {
       setGlobalDiscount(0)
       setSplitPayments([])
       setPaymentMethod("cash")
-      setLastSale(data.sale)
+      setLastSale(savedRecord)
+      setLastSaleCustomerBalance(isOrderMode ? selectedCustomerBalance : null)
       toast.success(`${entityLabel} completed! Total: ${formatCurrency(grandTotal)}`)
 
     } catch (error) {
@@ -1552,6 +1592,17 @@ export function EnhancedPOSPage({ mode = "sale" }) {
               <span className="text-gray-900">{!isOrderMode && loadedOrderId ? 'Payable Now:' : 'Grand Total:'}</span>
               <span className="text-indigo-600">{grandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
             </div>
+
+            {estimatedCommission > 0 && (
+              <div className="flex justify-between text-sm pt-2 border-t border-dashed border-purple-200">
+                <span className="text-purple-700 font-medium">
+                  Est. Commission ({selectedEmployee?.name}):
+                </span>
+                <span className="font-semibold text-purple-700">
+                  Rs {estimatedCommission.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Payment Section - Includes Hold/Recall and Methods */}
@@ -1795,7 +1846,7 @@ export function EnhancedPOSPage({ mode = "sale" }) {
               </button>
               {lastSale && (
                 <button
-                  onClick={() => printReceipt(lastSale)}
+                  onClick={() => printReceipt(lastSale, lastSaleCustomerBalance)}
                   className="col-span-2 px-4 py-3 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 font-bold flex items-center justify-center"
                 >
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

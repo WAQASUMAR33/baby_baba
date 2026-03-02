@@ -8,51 +8,59 @@ export default function DashboardPage() {
   const [stats, setStats] = useState({
     totalOrders: 0,
     totalRevenue: 0,
-    totalCustomers: 0,
+    totalExpenses: 0,
     totalProducts: 0,
   })
   const [loadingStats, setLoadingStats] = useState(true)
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
+
+  const loadStats = async (start, end) => {
+    setLoadingStats(true)
+    try {
+      const salesParams = new URLSearchParams({ limit: "1", offset: "0" })
+      if (start) salesParams.set("startDate", start)
+      if (end) salesParams.set("endDate", end)
+
+      const expenseParams = new URLSearchParams({ limit: "1" })
+      if (start) expenseParams.set("startDate", start)
+      if (end) expenseParams.set("endDate", end)
+
+      const [salesRes, expensesRes, productsRes] = await Promise.all([
+        fetch(`/api/sales?${salesParams}`),
+        fetch(`/api/expenses?${expenseParams}`),
+        fetch("/api/products?limit=1"),
+      ])
+      const salesData = salesRes.ok ? await salesRes.json() : null
+      const expensesData = expensesRes.ok ? await expensesRes.json() : null
+      const productsData = productsRes.ok ? await productsRes.json() : null
+
+      setStats({
+        totalOrders: salesData?.stats?.totalSales || 0,
+        totalRevenue: salesData?.stats?.totalRevenue || 0,
+        totalExpenses: expensesData?.stats?.totalAmount || 0,
+        totalProducts: productsData?.total || 0,
+      })
+    } catch (error) {
+      setStats({ totalOrders: 0, totalRevenue: 0, totalExpenses: 0, totalProducts: 0 })
+    } finally {
+      setLoadingStats(false)
+    }
+  }
 
   useEffect(() => {
-    let isActive = true
-    const loadStats = async () => {
-      try {
-        const [salesRes, customersRes, productsRes] = await Promise.all([
-          fetch("/api/sales?limit=1&offset=0"),
-          fetch("/api/customers"),
-          fetch("/api/products?limit=1"),
-        ])
-        const salesData = salesRes.ok ? await salesRes.json() : null
-        const customersData = customersRes.ok ? await customersRes.json() : null
-        const productsData = productsRes.ok ? await productsRes.json() : null
-
-        if (!isActive) return
-
-        setStats({
-          totalOrders: salesData?.stats?.totalSales || 0,
-          totalRevenue: salesData?.stats?.totalRevenue || 0,
-          totalCustomers: customersData?.stats?.totalCustomers || 0,
-          totalProducts: productsData?.total || 0,
-        })
-      } catch (error) {
-        if (!isActive) return
-        setStats({
-          totalOrders: 0,
-          totalRevenue: 0,
-          totalCustomers: 0,
-          totalProducts: 0,
-        })
-      } finally {
-        if (isActive) {
-          setLoadingStats(false)
-        }
-      }
-    }
-    loadStats()
-    return () => {
-      isActive = false
-    }
+    loadStats("", "")
   }, [])
+
+  const handleFilter = () => {
+    loadStats(startDate, endDate)
+  }
+
+  const handleClear = () => {
+    setStartDate("")
+    setEndDate("")
+    loadStats("", "")
+  }
 
   const formatCurrency = (amount) => {
     return `Rs ${Number(amount || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -66,8 +74,53 @@ export default function DashboardPage() {
           Welcome back{session?.user?.name ? `, ${session.user.name}` : ""}!
         </h2>
         <p className="mt-2 text-sm text-gray-600">
-          Here&apos;s what&apos;s happening with your account today.
+          Here&apos;s what&apos;s happening with your account.
         </p>
+      </div>
+
+      {/* Date Range Filter */}
+      <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+        <div className="flex flex-col md:flex-row md:items-end md:space-x-4 space-y-3 md:space-y-0">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleFilter}
+              className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              Apply
+            </button>
+            {(startDate || endDate) && (
+              <button
+                onClick={handleClear}
+                className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+        {(startDate || endDate) && (
+          <p className="mt-2 text-xs text-blue-700 bg-blue-50 px-3 py-1 rounded">
+            Showing statistics from {startDate || "beginning"} to {endDate || "now"}
+          </p>
+        )}
       </div>
 
       {/* Stats Grid */}
@@ -120,17 +173,17 @@ export default function DashboardPage() {
           <div className="p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="w-8 h-8 bg-yellow-500 rounded-md flex items-center justify-center">
+                <div className="w-8 h-8 bg-red-500 rounded-md flex items-center justify-center">
                   <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
                 </div>
               </div>
               <div className="ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">Customers</dt>
+                  <dt className="text-sm font-medium text-gray-500 truncate">Expenses</dt>
                   <dd className="text-lg font-semibold text-gray-900">
-                    {loadingStats ? "--" : stats.totalCustomers}
+                    {loadingStats ? "--" : formatCurrency(stats.totalExpenses)}
                   </dd>
                 </dl>
               </div>
@@ -171,14 +224,6 @@ export default function DashboardPage() {
             </svg>
             <h3 className="mt-2 text-sm font-medium text-gray-900">No activity</h3>
             <p className="mt-1 text-sm text-gray-500">Get started by creating a new item.</p>
-            <div className="mt-6">
-              <button
-                type="button"
-                className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                New Item
-              </button>
-            </div>
           </div>
         </div>
       </div>
