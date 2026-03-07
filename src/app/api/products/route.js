@@ -87,19 +87,14 @@ export async function GET(request) {
                 `SELECT COUNT(DISTINCT p.id) as totalProducts FROM \`${product}\` p`
             );
             const [lowStockRow] = await pool.execute(
-                `SELECT COUNT(*) as lowStockProducts FROM (
-                    SELECT p.id, SUM(COALESCE(v.inventory_quantity, 0)) as stock_total
-                    FROM \`${product}\` p
-                    LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
-                    GROUP BY p.id
-                    HAVING stock_total > 0 AND stock_total <= 10
-                ) as low_sub`
+                `SELECT COUNT(*) as lowStockProducts FROM \`${product}\` p
+                WHERE p.quantity > 0 AND p.quantity <= 10`
             );
             const [costRow] = await pool.execute(
                 `SELECT
-                    COALESCE(SUM(v.compare_at_price * GREATEST(v.inventory_quantity, 0)), 0) as totalCostValue,
-                    COALESCE(SUM(v.price * GREATEST(v.inventory_quantity, 0)), 0) as totalSaleValue
-                FROM \`${productvariant}\` v`
+                    COALESCE(SUM(p.original_price * GREATEST(p.quantity, 0)), 0) as totalCostValue,
+                    COALESCE(SUM(p.sale_price * GREATEST(p.quantity, 0)), 0) as totalSaleValue
+                FROM \`${product}\` p`
             );
             return NextResponse.json({
                 success: true,
@@ -173,14 +168,15 @@ export async function GET(request) {
             filterParams.push(parseInt(categoryId));
         }
 
-        const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-
-        // Stock filter applied as HAVING on aggregated inventory_quantity
-        const stockHaving = {
-            'in-stock': 'HAVING stock_total > 10',
-            'low-stock': 'HAVING stock_total > 0 AND stock_total <= 10',
-            'out-of-stock': 'HAVING stock_total = 0',
+        // Stock filter applied directly on Product.quantity
+        const stockWhere = {
+            'in-stock': 'p.quantity > 10',
+            'low-stock': 'p.quantity > 0 AND p.quantity <= 10',
+            'out-of-stock': 'p.quantity <= 0',
         }[stock] || '';
+        if (stockWhere) conditions.push(stockWhere);
+
+        const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
 
         const orderByClause = (() => {
             switch (sortBy) {
@@ -188,8 +184,8 @@ export async function GET(request) {
                 case 'name-desc': return ` ORDER BY p.title DESC`;
                 case 'price-low': return ` ORDER BY p.sale_price ASC`;
                 case 'price-high': return ` ORDER BY p.sale_price DESC`;
-                case 'stock-low': return ` ORDER BY v.inventory_quantity ASC`;
-                case 'stock-high': return ` ORDER BY v.inventory_quantity DESC`;
+                case 'stock-low': return ` ORDER BY p.quantity ASC`;
+                case 'stock-high': return ` ORDER BY p.quantity DESC`;
                 default: return ` ORDER BY p.updatedAt DESC`;
             }
         })();
@@ -200,35 +196,20 @@ export async function GET(request) {
                 case 'name-desc': return ` ORDER BY p.title DESC`;
                 case 'price-low': return ` ORDER BY p.sale_price ASC`;
                 case 'price-high': return ` ORDER BY p.sale_price DESC`;
-                case 'stock-low': return ` ORDER BY stock_total ASC`;
-                case 'stock-high': return ` ORDER BY stock_total DESC`;
+                case 'stock-low': return ` ORDER BY p.quantity ASC`;
+                case 'stock-high': return ` ORDER BY p.quantity DESC`;
                 default: return ` ORDER BY p.updatedAt DESC`;
             }
         })();
 
-        // Count query: use a subquery when stock filter is active (requires HAVING)
-        let countQuery;
-        if (stockHaving) {
-            countQuery = `
-        SELECT COUNT(*) as total FROM (
-          SELECT p.id, SUM(COALESCE(v.inventory_quantity, 0)) as stock_total
-          FROM \`${product}\` p
-          ${joinClause}
-          LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
-          ${whereClause}
-          GROUP BY p.id
-          ${stockHaving}
-        ) as stock_sub
-      `;
-        } else {
-            countQuery = `
+        // Count query (stock filter is now part of WHERE, no HAVING needed)
+        const countQuery = `
         SELECT COUNT(DISTINCT p.id) as total
         FROM \`${product}\` p
         ${joinClause}
         LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
         ${whereClause}
       `;
-        }
 
         const [countRows] = await pool.execute(countQuery, filterParams);
         const total = countRows?.[0]?.total || 0;
@@ -238,13 +219,11 @@ export async function GET(request) {
 
         if (applyLimit) {
             const idQuery = `
-        SELECT p.id, SUM(COALESCE(v.inventory_quantity, 0)) as stock_total
+        SELECT DISTINCT p.id
         FROM \`${product}\` p
         ${joinClause}
         LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
         ${whereClause}
-        GROUP BY p.id
-        ${stockHaving}
         ${idOrderByClause}
         LIMIT ? OFFSET ?
       `;
@@ -266,37 +245,9 @@ export async function GET(request) {
             }
             rows = detailRows;
         } else {
-            if (stockHaving) {
-                // Two-step for non-paginated with stock filter
-                const allIdQuery = `
-          SELECT p.id, SUM(COALESCE(v.inventory_quantity, 0)) as stock_total
-          FROM \`${product}\` p
-          ${joinClause}
-          LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
-          ${whereClause}
-          GROUP BY p.id
-          ${stockHaving}
-          ${idOrderByClause}
-        `;
-                const [allIdRows] = await pool.execute(allIdQuery, filterParams);
-                ids = allIdRows.map(r => r.id);
-                if (ids.length > 0) {
-                    const chunkSize = 200;
-                    for (let i = 0; i < ids.length; i += chunkSize) {
-                        const chunk = ids.slice(i, i + chunkSize);
-                        const placeholders = chunk.map(() => '?').join(',');
-                        const [chunkRows] = await pool.execute(
-                            `${baseSelect} WHERE p.id IN (${placeholders})`,
-                            chunk
-                        );
-                        rows.push(...chunkRows);
-                    }
-                }
-            } else {
-                const query = `${baseSelect}${whereClause}${orderByClause}`;
-                const [detailRows] = await pool.execute(query, filterParams);
-                rows = detailRows;
-            }
+            const query = `${baseSelect}${whereClause}${orderByClause}`;
+            const [detailRows] = await pool.execute(query, filterParams);
+            rows = detailRows;
         }
 
         // Group rows by product (LEFT JOIN produces multiple rows per product for variants)
@@ -460,12 +411,9 @@ export async function DELETE(request) {
         const pool = getPool();
         const { product, productvariant } = await getTableNames();
 
-        // Find all low-stock product IDs (0 < stock_total <= 10)
+        // Find all low-stock product IDs (0 < quantity <= 10)
         const [idRows] = await pool.execute(
-            `SELECT p.id FROM \`${product}\` p
-             LEFT JOIN \`${productvariant}\` v ON p.id = v.productId
-             GROUP BY p.id
-             HAVING SUM(COALESCE(v.inventory_quantity, 0)) > 0 AND SUM(COALESCE(v.inventory_quantity, 0)) <= 10`
+            `SELECT id FROM \`${product}\` WHERE quantity > 0 AND quantity <= 10`
         );
         if (idRows.length === 0) {
             return NextResponse.json({ success: true, deleted: 0 });

@@ -107,7 +107,7 @@ export default function ProductsPage() {
       const res = await fetch('/api/products?analyticsOnly=true', { cache: 'no-store' })
       const data = await res.json()
       if (data.success) setAnalytics(data)
-    } catch {}
+    } catch { }
     finally { setAnalyticsLoading(false) }
   }
 
@@ -136,7 +136,7 @@ export default function ProductsPage() {
       const res = await fetch('/api/products?vendorsOnly=true')
       const data = await res.json()
       if (data.success) setVendors(data.vendors || [])
-    } catch {}
+    } catch { }
   }
 
   const fetchCategories = async () => {
@@ -849,7 +849,7 @@ export default function ProductsPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         {(() => {
-                          const stock = product.variants?.reduce((sum, v) => sum + (v.inventory_quantity || 0), 0) ?? product.quantity ?? 0
+                          const stock = product.quantity ?? 0
                           return (
                             <div className={`text-sm font-bold ${stock <= 0 ? 'text-red-600' : stock <= 10 ? 'text-yellow-600' : 'text-green-600'}`}>
                               {stock}

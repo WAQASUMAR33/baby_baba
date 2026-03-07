@@ -312,8 +312,8 @@ export async function updateProduct(id, data) {
       )
     }
 
-    // Update main variant if barcode or prices are provided
-    if (data.barcode !== undefined || data.sale_price !== undefined || data.original_price !== undefined) {
+    // Update main variant if barcode, prices, or quantity are provided
+    if (data.barcode !== undefined || data.sale_price !== undefined || data.original_price !== undefined || data.quantity !== undefined) {
       // Find the first variant
       const [variants] = await conn.execute(`SELECT id FROM ${variantTable} WHERE productId = ? LIMIT 1`, [String(id)])
       if (variants.length > 0) {
@@ -324,6 +324,8 @@ export async function updateProduct(id, data) {
         if (data.barcode !== undefined) { vUpdateFields.push('barcode = ?'); vParams.push(data.barcode) }
         if (data.sale_price !== undefined) { vUpdateFields.push('price = ?'); vParams.push(data.sale_price) }
         if (data.original_price !== undefined) { vUpdateFields.push('compare_at_price = ?'); vParams.push(data.original_price) }
+        // Keep variant inventory_quantity in sync with the product-level quantity
+        if (data.quantity !== undefined) { vUpdateFields.push('inventory_quantity = ?'); vParams.push(data.quantity) }
 
         if (vUpdateFields.length > 0) {
           vParams.push(variantId)
