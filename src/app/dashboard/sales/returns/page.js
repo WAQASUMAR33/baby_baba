@@ -14,6 +14,22 @@ export default function SaleReturnsPage() {
   const [error, setError] = useState("")
   const [successMessage, setSuccessMessage] = useState("")
 
+  // Return history
+  const [returns, setReturns] = useState([])
+  const [loadingReturns, setLoadingReturns] = useState(false)
+
+  const fetchReturns = async () => {
+    try {
+      setLoadingReturns(true)
+      const res = await fetch('/api/sales/returns?limit=50')
+      const data = await res.json()
+      if (data.success) setReturns(data.returns || [])
+    } catch {}
+    finally { setLoadingReturns(false) }
+  }
+
+  useEffect(() => { fetchReturns() }, [])
+
   // Refund split
   const [cashInput, setCashInput] = useState("")          // what cashier types
   const [cashManuallySet, setCashManuallySet] = useState(false)
@@ -206,6 +222,7 @@ export default function SaleReturnsPage() {
           items: selectedReturnItems,
           cashAmount,
           customerId: ledgerAmount > 0 ? selectedCustomerId : undefined,
+          customerName: selectedCustomerName || sale.customerName || undefined,
         }),
       })
       const data = await res.json()
@@ -222,6 +239,7 @@ export default function SaleReturnsPage() {
       saleItems.forEach(item => { qtyState[String(item.variantId || item.productId)] = 0 })
       setReturnQuantities(qtyState)
       setCashManuallySet(false)
+      fetchReturns()
     } catch (err) {
       setError(err.message || "Failed to process return")
     } finally {
@@ -611,6 +629,57 @@ export default function SaleReturnsPage() {
           </div>
         </div>
       )}
+
+      {/* ── Return History ── */}
+      <div className="mt-10">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Return History</h2>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          {loadingReturns ? (
+            <div className="p-10 text-center"><LoadingSpinner size="md" text="Loading history…" /></div>
+          ) : returns.length === 0 ? (
+            <div className="p-10 text-center text-sm text-gray-500">No returns recorded yet.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {['Return #', 'Sale #', 'Date & Time', 'Employee', 'Customer', 'Items', 'Cash Refund', 'Ledger Credit', 'Total Refund'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {returns.map(ret => (
+                    <tr key={ret.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">#{ret.id}</td>
+                      <td className="px-4 py-3 text-indigo-600 font-medium">#{ret.saleId}</td>
+                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                        {new Date(ret.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">{ret.employeeName || '—'}</td>
+                      <td className="px-4 py-3 text-gray-500">{ret.customerName || '—'}</td>
+                      <td className="px-4 py-3 text-gray-500 max-w-xs">
+                        {Array.isArray(ret.items) && ret.items.length > 0
+                          ? ret.items.map(i => `${i.title} ×${i.quantity}`).join(', ')
+                          : <span className="text-gray-400 italic">—</span>}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-green-700 whitespace-nowrap">
+                        {parseFloat(ret.cashAmount) > 0 ? `Rs ${parseFloat(ret.cashAmount).toLocaleString('en-PK', { minimumFractionDigits: 2 })}` : '—'}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-indigo-700 whitespace-nowrap">
+                        {parseFloat(ret.ledgerAmount) > 0 ? `Rs ${parseFloat(ret.ledgerAmount).toLocaleString('en-PK', { minimumFractionDigits: 2 })}` : '—'}
+                      </td>
+                      <td className="px-4 py-3 font-bold text-red-600 whitespace-nowrap">
+                        Rs {parseFloat(ret.returnAmount).toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

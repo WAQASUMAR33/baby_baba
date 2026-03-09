@@ -29,14 +29,32 @@ export default function SalesPage() {
   const [employees, setEmployees] = useState([])
   const [loadingEmployees, setLoadingEmployees] = useState(false)
 
+  // Returns
+  const [saleReturns, setSaleReturns] = useState([])
+  const [loadingReturns, setLoadingReturns] = useState(false)
+
   useEffect(() => {
     fetchSales()
     fetchPosSales()
     fetchOrders()
     fetchEmployees()
     fetchCustomers()
+    fetchReturns()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const fetchReturns = async () => {
+    try {
+      setLoadingReturns(true)
+      const res = await fetch('/api/sales/returns')
+      const data = await res.json()
+      if (data.success) setSaleReturns(data.returns || [])
+    } catch (error) {
+      console.error('Error fetching returns:', error)
+    } finally {
+      setLoadingReturns(false)
+    }
+  }
 
   const fetchEmployees = async () => {
     try {
@@ -589,6 +607,8 @@ export default function SalesPage() {
               onClick={() => {
                 if (activeTab === 'orders') {
                   fetchOrders()
+                } else if (activeTab === 'returns') {
+                  fetchReturns()
                 } else {
                   fetchPosSales()
                 }
@@ -647,6 +667,15 @@ export default function SalesPage() {
                 } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
             >
               Orders ({orders.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('returns')}
+              className={`${activeTab === 'returns'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              Returns ({saleReturns.length})
             </button>
           </nav>
         </div>
@@ -1205,6 +1234,78 @@ export default function SalesPage() {
                             {convertingId === order.id ? 'Converting...' : 'Convert to Sale'}
                           </button>
                         </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Returns Tab */}
+      {activeTab === 'returns' && (
+        <div className="bg-white shadow rounded-lg overflow-hidden">
+          {loadingReturns ? (
+            <div className="p-12 text-center">
+              <LoadingSpinner size="md" text="Loading returns…" />
+            </div>
+          ) : saleReturns.length === 0 ? (
+            <div className="p-12 text-center">
+              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">No returns yet</h3>
+              <p className="mt-1 text-sm text-gray-500">Processed sale returns will appear here.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Return #</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sale #</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date & Time</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sale Total</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cash Refund</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ledger Credit</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Refund</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {saleReturns.map((ret) => (
+                    <tr key={ret.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#{ret.id}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-indigo-600 font-medium">#{ret.saleId}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(ret.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {ret.customerName || '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {ret.employeeName || '—'}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500 max-w-xs">
+                        {Array.isArray(ret.items) && ret.items.length > 0
+                          ? ret.items.map(i => `${i.title} ×${i.quantity}`).join(', ')
+                          : <span className="text-gray-400 italic">No item detail</span>}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {ret.saleTotal ? `Rs ${parseFloat(ret.saleTotal).toLocaleString('en-PK', { minimumFractionDigits: 2 })}` : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-700">
+                        {parseFloat(ret.cashAmount) > 0 ? `Rs ${parseFloat(ret.cashAmount).toLocaleString('en-PK', { minimumFractionDigits: 2 })}` : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-700">
+                        {parseFloat(ret.ledgerAmount) > 0 ? `Rs ${parseFloat(ret.ledgerAmount).toLocaleString('en-PK', { minimumFractionDigits: 2 })}` : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-red-600">
+                        Rs {parseFloat(ret.returnAmount).toLocaleString('en-PK', { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
                   ))}

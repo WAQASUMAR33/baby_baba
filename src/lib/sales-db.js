@@ -1405,10 +1405,126 @@ export async function createManualLedgerEntry({ customerId, amount, type, descri
   }
 }
 
+async function ensureSaleReturnTable(conn) {
+  await conn.execute(`
+    CREATE TABLE IF NOT EXISTS SaleReturn (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      saleId VARCHAR(255) NOT NULL,
+      items JSON NOT NULL,
+      returnAmount DECIMAL(12,2) NOT NULL DEFAULT 0,
+      cashAmount DECIMAL(12,2) NOT NULL DEFAULT 0,
+      ledgerAmount DECIMAL(12,2) NOT NULL DEFAULT 0,
+      customerId VARCHAR(255) NULL,
+      customerName VARCHAR(255) NULL,
+      saleTotal DECIMAL(12,2) NULL,
+      employeeId INT NULL,
+      employeeName VARCHAR(255) NULL,
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  // Add new columns to existing tables that were created before these fields existed
+  const newCols = [
+    'ALTER TABLE SaleReturn ADD COLUMN saleTotal DECIMAL(12,2) NULL',
+    'ALTER TABLE SaleReturn ADD COLUMN employeeId INT NULL',
+    'ALTER TABLE SaleReturn ADD COLUMN employeeName VARCHAR(255) NULL',
+  ]
+  for (const sql of newCols) {
+    try { await conn.execute(sql) } catch (e) { if (e?.code !== 'ER_DUP_FIELDNAME') throw e }
+  }
+}
+
+export async function createSaleReturn({ saleId, items, returnAmount, cashAmount, ledgerAmount, customerId, customerName, saleTotal, employeeId, employeeName }) {
+  const connection = getPool()
+  const conn = await connection.getConnection()
+  try {
+    await ensureSaleReturnTable(conn)
+    const [result] = await conn.execute(
+      `INSERT INTO SaleReturn (saleId, items, returnAmount, cashAmount, ledgerAmount, customerId, customerName, saleTotal, employeeId, employeeName) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [String(saleId), JSON.stringify(items), returnAmount, cashAmount, ledgerAmount, customerId || null, customerName || null, saleTotal || null, employeeId || null, employeeName || null]
+    )
+    return { id: result.insertId }
+  } finally {
+    conn.release()
+  }
+}
+
+export async function getSaleReturns({ startDate, endDate, limit = 100, offset = 0 } = {}) {
+  const connection = getPool()
+  const conn = await connection.getConnection()
+  try {
+    await ensureSaleReturnTable(conn)
+
+    // Build date conditions
+    const srDateConds = []
+    const clDateConds = []
+    const srParams = []
+    const clParams = []
+    if (startDate) {
+      srDateConds.push('DATE(sr.createdAt) >= ?'); srParams.push(startDate)
+      clDateConds.push('DATE(cl.createdAt) >= ?'); clParams.push(startDate)
+    }
+    if (endDate) {
+      srDateConds.push('DATE(sr.createdAt) <= ?'); srParams.push(endDate)
+      clDateConds.push('DATE(cl.createdAt) <= ?'); clParams.push(endDate)
+    }
+    const srWhere = srDateConds.length ? `WHERE ${srDateConds.join(' AND ')}` : ''
+    const clDateWhere = clDateConds.length ? `AND ${clDateConds.join(' AND ')}` : ''
+
+    // 1. New returns from SaleReturn table (full detail)
+    const [srRows] = await conn.execute(
+      `SELECT sr.id, sr.saleId, sr.items, sr.returnAmount, sr.cashAmount, sr.ledgerAmount, sr.customerId, sr.customerName, sr.saleTotal, sr.employeeId, sr.employeeName, sr.createdAt FROM SaleReturn sr ${srWhere} ORDER BY sr.createdAt DESC`,
+      srParams
+    )
+    const newReturns = srRows.map(r => ({
+      ...r,
+      items: (() => { try { const v = typeof r.items === 'string' ? JSON.parse(r.items) : r.items; return Array.isArray(v) ? v : [] } catch { return [] } })(),
+      source: 'return',
+    }))
+
+    // 2. Historical returns from CustomerLedger (limited detail, no items)
+    // Exclude saleIds already covered by SaleReturn to avoid duplicates
+    const customerTable = await getCustomerTable()
+    let historicalReturns = []
+    try {
+      const coveredSaleIds = [...new Set(newReturns.map(r => String(r.saleId)))]
+      const notInClause = coveredSaleIds.length
+        ? `AND cl.referenceId NOT IN (${coveredSaleIds.map(() => '?').join(',')})`
+        : ''
+      const nameField = customerTable ? `c.name` : `NULL`
+      const joinClause = customerTable ? `LEFT JOIN ${customerTable} c ON c.id = cl.customerId` : ''
+      const [clRows] = await conn.execute(
+        `SELECT cl.id, cl.referenceId as saleId, cl.customerId, ${nameField} as customerName,
+                ABS(cl.total) as returnAmount, 0 as cashAmount, ABS(cl.total) as ledgerAmount,
+                cl.createdAt
+         FROM CustomerLedger cl ${joinClause}
+         WHERE cl.referenceType = 'sale-return' ${notInClause} ${clDateWhere}
+         ORDER BY cl.createdAt DESC`,
+        [...coveredSaleIds, ...clParams]
+      )
+      historicalReturns = clRows.map(r => ({ ...r, items: [], source: 'ledger' }))
+    } catch (e) {
+      // CustomerLedger query failed (table may not exist), skip historical
+    }
+
+    // Merge and sort by date descending
+    const all = [...newReturns, ...historicalReturns].sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    )
+
+    // Apply pagination
+    const paginated = all.slice(parseInt(offset), parseInt(offset) + parseInt(limit))
+    return { returns: paginated, total: all.length }
+  } finally {
+    conn.release()
+  }
+}
+
 export default {
   findUserByEmail,
   createSale,
   getSales,
   getCustomerLedger,
   createManualLedgerEntry,
+  createSaleReturn,
+  getSaleReturns,
 }

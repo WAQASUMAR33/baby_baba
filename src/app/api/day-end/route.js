@@ -65,15 +65,13 @@ async function ensureDayEndTable() {
 
 async function ensureDayEndColumns(p, tableName) {
     if (dayEndColumnsChecked) return;
-    try {
-        await p.execute(`ALTER TABLE \`${tableName}\` ADD COLUMN \`cash_sales\` DECIMAL(10,2) NOT NULL DEFAULT 0`);
-    } catch (err) {
-        if (err?.code !== 'ER_DUP_FIELDNAME') throw err;
-    }
-    try {
-        await p.execute(`ALTER TABLE \`${tableName}\` ADD COLUMN \`withdraw_amount\` DECIMAL(10,2) NOT NULL DEFAULT 0`);
-    } catch (err) {
-        if (err?.code !== 'ER_DUP_FIELDNAME') throw err;
+    const alters = [
+        `ALTER TABLE \`${tableName}\` ADD COLUMN \`cash_sales\` DECIMAL(10,2) NOT NULL DEFAULT 0`,
+        `ALTER TABLE \`${tableName}\` ADD COLUMN \`withdraw_amount\` DECIMAL(10,2) NOT NULL DEFAULT 0`,
+        `ALTER TABLE \`${tableName}\` ADD COLUMN \`total_returns\` DECIMAL(10,2) NOT NULL DEFAULT 0`,
+    ];
+    for (const sql of alters) {
+        try { await p.execute(sql) } catch (err) { if (err?.code !== 'ER_DUP_FIELDNAME') throw err }
     }
     dayEndColumnsChecked = true;
 }
@@ -83,8 +81,9 @@ async function getSourceTables(p) {
     const all = tableRows.map((r) => Object.values(r)[0]);
     const resolve = (candidates) => candidates.find((n) => all.includes(n)) || null;
     return {
-        expenseTable: resolve(['Expense', 'expense', 'expenses']),
-        saleTable: resolve(['Sale', 'sale', 'sales']),
+        expenseTable:   resolve(['Expense', 'expense', 'expenses']),
+        saleTable:      resolve(['Sale', 'sale', 'sales']),
+        returnTable:    resolve(['SaleReturn', 'salereturn', 'sale_return']),
     };
 }
 
@@ -93,7 +92,7 @@ async function getSourceTables(p) {
  * Uses DATE() MySQL function to avoid timezone boundary issues.
  */
 async function fetchLiveTotals(p, dateStr) {
-    const { expenseTable, saleTable } = await getSourceTables(p);
+    const { expenseTable, saleTable, returnTable } = await getSourceTables(p);
 
     let totalExpenses = 0;
     if (expenseTable) {
@@ -121,7 +120,18 @@ async function fetchLiveTotals(p, dateStr) {
         cashSales  = parseFloat(salesRows[0]?.cashSales  || 0);
     }
 
-    return { totalExpenses, totalSales, cashSales };
+    let totalReturns = 0;
+    if (returnTable) {
+        const [retRows] = await p.execute(
+            `SELECT COALESCE(SUM(cashAmount), 0) AS totalReturns
+             FROM \`${returnTable}\`
+             WHERE DATE(createdAt) = ?`,
+            [dateStr]
+        );
+        totalReturns = parseFloat(retRows[0]?.totalReturns || 0);
+    }
+
+    return { totalExpenses, totalSales, cashSales, totalReturns };
 }
 
 const BASE_SELECT = (t) => `
@@ -129,7 +139,8 @@ const BASE_SELECT = (t) => `
         opening_balance  AS openingBalance,
         total_expenses   AS totalExpenses,
         total_sales      AS totalSales,
-        COALESCE(cash_sales, 0) AS cashSales,
+        COALESCE(cash_sales, 0)      AS cashSales,
+        COALESCE(total_returns, 0)   AS totalReturns,
         daily_cash       AS dailyCash,
         COALESCE(withdraw_amount, 0) AS withdrawAmount,
         closing_balance  AS closingBalance,
@@ -163,10 +174,10 @@ export async function GET(request) {
         const openingBalance = parseFloat(prevRows[0]?.closingBalance || 0);
 
         // Live totals from source tables
-        const { totalExpenses, totalSales, cashSales } = await fetchLiveTotals(p, dateStr);
+        const { totalExpenses, totalSales, cashSales, totalReturns } = await fetchLiveTotals(p, dateStr);
 
-        // Expected cash in drawer = Opening + All Sales - Expenses
-        const expectedClosing = parseFloat((openingBalance + totalSales - totalExpenses).toFixed(2));
+        // Expected cash in drawer = Opening + Sales - Expenses - Returns
+        const expectedClosing = parseFloat((openingBalance + totalSales - totalExpenses - totalReturns).toFixed(2));
 
         // Check for an already-saved record
         const [saved] = await p.execute(
@@ -184,6 +195,7 @@ export async function GET(request) {
                 totalExpenses,
                 totalSales,
                 cashSales,
+                totalReturns,
                 expectedClosing,
                 variance: parseFloat((dailyCash - expectedClosing).toFixed(2)),
             });
@@ -197,6 +209,7 @@ export async function GET(request) {
             totalExpenses,
             totalSales,
             cashSales,
+            totalReturns,
             dailyCash: 0,
             closingBalance: 0,
             expectedClosing,
@@ -222,12 +235,13 @@ export async function POST(request) {
             totalExpenses,
             totalSales,
             cashSales,
+            totalReturns,
             withdrawAmount,
         } = body;
 
-        // Closing balance = opening + expenses + sales - withdraw
+        // Closing balance = opening + sales - expenses - returns - withdraw
         const closingBalance = parseFloat(
-            ((parseFloat(openingBalance) || 0) + (parseFloat(totalExpenses) || 0) + (parseFloat(totalSales) || 0) - (parseFloat(withdrawAmount) || 0)).toFixed(2)
+            ((parseFloat(openingBalance) || 0) + (parseFloat(totalSales) || 0) - (parseFloat(totalExpenses) || 0) - (parseFloat(totalReturns) || 0) - (parseFloat(withdrawAmount) || 0)).toFixed(2)
         );
 
         const p = getPool();
@@ -235,13 +249,14 @@ export async function POST(request) {
 
         await p.execute(
             `INSERT INTO \`${t}\`
-                (date, opening_balance, total_expenses, total_sales, cash_sales, daily_cash, withdraw_amount, closing_balance, createdAt, updatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                (date, opening_balance, total_expenses, total_sales, cash_sales, total_returns, daily_cash, withdraw_amount, closing_balance, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
              ON DUPLICATE KEY UPDATE
                 opening_balance = VALUES(opening_balance),
                 total_expenses  = VALUES(total_expenses),
                 total_sales     = VALUES(total_sales),
                 cash_sales      = VALUES(cash_sales),
+                total_returns   = VALUES(total_returns),
                 daily_cash      = VALUES(daily_cash),
                 withdraw_amount = VALUES(withdraw_amount),
                 closing_balance = VALUES(closing_balance),
@@ -252,6 +267,7 @@ export async function POST(request) {
                 parseFloat(totalExpenses)  || 0,
                 parseFloat(totalSales)     || 0,
                 parseFloat(cashSales)      || 0,
+                parseFloat(totalReturns)   || 0,
                 0,
                 parseFloat(withdrawAmount) || 0,
                 closingBalance,

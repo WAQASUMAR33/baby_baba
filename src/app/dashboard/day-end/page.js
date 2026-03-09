@@ -66,6 +66,7 @@ export default function DayEndPage() {
                     totalExpenses:  data.totalExpenses,
                     totalSales:     data.totalSales,
                     cashSales:      data.cashSales,
+                    totalReturns:   data.totalReturns,
                     withdrawAmount: parseFloat(withdrawAmount) || 0,
                 }),
             });
@@ -87,9 +88,10 @@ export default function DayEndPage() {
     const cashSales      = parseFloat(data?.cashSales      || 0);
     const cardOtherSales = totalSales - cashSales;
     const totalExpenses  = parseFloat(data?.totalExpenses  || 0);
+    const totalReturns   = parseFloat(data?.totalReturns   || 0);
     const withdraw       = parseFloat(withdrawAmount) || 0;
-    // closing = opening + expenses + sales - withdraw
-    const closingBalance = parseFloat((openingBalance + totalExpenses + totalSales - withdraw).toFixed(2));
+    // closing = opening + sales - expenses - returns - withdraw
+    const closingBalance = parseFloat((openingBalance + totalSales - totalExpenses - totalReturns - withdraw).toFixed(2));
 
     return (
         <div className="p-6 max-w-5xl mx-auto">
@@ -112,10 +114,11 @@ export default function DayEndPage() {
                 <div className="space-y-6">
 
                     {/* ── Row 1: System data ───────────────────────────── */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <StatCard label="Opening Balance" value={openingBalance} note="Previous day closing" />
                         <StatCard label="Total Sales" value={totalSales} color="green" note={`Cash: Rs. ${fmt(cashSales)}  |  Card/Other: Rs. ${fmt(cardOtherSales)}`} />
                         <StatCard label="Total Expenses" value={totalExpenses} color="red" note={`Logged expenses for ${date}`} />
+                        <StatCard label="Sale Returns" value={totalReturns} color="red" note="Cash refunds paid out today" />
                     </div>
 
                     {/* ── Row 2: Withdraw input ────────────────────────── */}
@@ -141,7 +144,7 @@ export default function DayEndPage() {
                         <h3 className="text-lg font-medium text-blue-800 mb-1">Closing Balance</h3>
                         <p className="text-4xl font-bold text-blue-900">Rs. {fmt(closingBalance)}</p>
                         <p className="text-sm text-blue-600 mt-2">
-                            Opening ({fmt(openingBalance)}) + Expenses ({fmt(totalExpenses)}) + Sales ({fmt(totalSales)}) − Withdraw ({fmt(withdraw)})
+                            Opening ({fmt(openingBalance)}) + Sales ({fmt(totalSales)}) − Expenses ({fmt(totalExpenses)}) − Returns ({fmt(totalReturns)}) − Withdraw ({fmt(withdraw)})
                         </p>
                     </div>
 
@@ -170,6 +173,7 @@ export default function DayEndPage() {
                                         <th className="px-4 py-3 text-right font-medium">Opening</th>
                                         <th className="px-4 py-3 text-right font-medium">Sales</th>
                                         <th className="px-4 py-3 text-right font-medium">Expenses</th>
+                                        <th className="px-4 py-3 text-right font-medium">Returns</th>
                                         <th className="px-4 py-3 text-right font-medium">Withdraw</th>
                                         <th className="px-4 py-3 text-right font-medium">Closing</th>
                                     </tr>
@@ -188,6 +192,7 @@ export default function DayEndPage() {
                                                 <td className="px-4 py-3 text-right text-gray-700">Rs. {fmt(r.openingBalance)}</td>
                                                 <td className="px-4 py-3 text-right text-green-700">Rs. {fmt(r.totalSales)}</td>
                                                 <td className="px-4 py-3 text-right text-red-600">Rs. {fmt(r.totalExpenses)}</td>
+                                                <td className="px-4 py-3 text-right text-red-500">Rs. {fmt(r.totalReturns)}</td>
                                                 <td className="px-4 py-3 text-right text-orange-600">Rs. {fmt(r.withdrawAmount)}</td>
                                                 <td className="px-4 py-3 text-right font-semibold text-gray-900">Rs. {fmt(r.closingBalance)}</td>
                                             </tr>

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
-import { applySaleReturnFinance, getSales, restockSaleItems } from '@/lib/sales-db'
+import { applySaleReturnFinance, getSales, restockSaleItems, createSaleReturn, getSaleReturns } from '@/lib/sales-db'
 import { getVariantById, getLocations, adjustInventory } from '@/lib/shopify'
 
 // Calculate the total refund amount from returned items (no DB side-effects)
@@ -23,6 +23,24 @@ function calcReturnAmount(sale, items) {
   return Math.max(0, parseFloat(total.toFixed(2)))
 }
 
+export async function GET(request) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+    const { searchParams } = new URL(request.url)
+    const startDate = searchParams.get('startDate') || ''
+    const endDate = searchParams.get('endDate') || ''
+    const limit = parseInt(searchParams.get('limit') || '100')
+    const offset = parseInt(searchParams.get('offset') || '0')
+    const { returns, total } = await getSaleReturns({ startDate, endDate, limit, offset })
+    return NextResponse.json({ success: true, returns, total })
+  } catch (error) {
+    return NextResponse.json({ success: false, error: error.message || 'Failed to fetch returns' }, { status: 500 })
+  }
+}
+
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions)
@@ -37,6 +55,7 @@ export async function POST(request) {
     // remaining (returnAmount - cashAmount) is added to the customer's ledger
     const rawCash = parseFloat(body.cashAmount)
     const customerId = body.customerId ? String(body.customerId) : null
+    const bodyCustomerName = body.customerName ? String(body.customerName) : null
 
     if (!saleId) {
       return NextResponse.json({ success: false, error: 'Sale ID is required' }, { status: 400 })
@@ -71,6 +90,10 @@ export async function POST(request) {
         variantId: String(matched.variantId),
         quantity,
         title: matched.title,
+        price: parseFloat(matched.price || 0),
+        costPrice: parseFloat(matched.costPrice || 0),
+        discount: parseFloat(matched.discount || 0),
+        sku: matched.sku || null,
       })
     }
 
@@ -99,6 +122,20 @@ export async function POST(request) {
         customerId,
       })
     }
+
+    // Record the return
+    await createSaleReturn({
+      saleId,
+      items: normalizedItems,
+      returnAmount,
+      cashAmount,
+      ledgerAmount,
+      customerId: ledgerAmount > 0 ? customerId : null,
+      customerName: bodyCustomerName || sale.customerName || null,
+      saleTotal: parseFloat(sale.total || 0),
+      employeeId: sale.employeeId || null,
+      employeeName: sale.employeeName || null,
+    })
 
     // Always restock inventory
     await restockSaleItems(normalizedItems)

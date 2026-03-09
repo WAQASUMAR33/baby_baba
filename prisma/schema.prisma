@@ -203,3 +203,21 @@ model DayEnd {
 
   @@map("DayEnd")
 }
+
+model SaleReturn {
+  id           Int      @id @default(autoincrement())
+  saleId       String   @db.VarChar(255)
+  items        Json
+  returnAmount Decimal  @default(0) @map("returnAmount") @db.Decimal(12, 2)
+  cashAmount   Decimal  @default(0) @map("cashAmount") @db.Decimal(12, 2)
+  ledgerAmount Decimal  @default(0) @map("ledgerAmount") @db.Decimal(12, 2)
+  customerId   String?  @db.VarChar(255)
+  customerName String?  @db.VarChar(255)
+  saleTotal    Decimal? @db.Decimal(12, 2)
+  employeeId   Int?
+  employeeName String?  @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("createdAt")
+
+  @@index([saleId])
+  @@map("SaleReturn")
+}
