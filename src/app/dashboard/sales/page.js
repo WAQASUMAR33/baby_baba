@@ -19,7 +19,7 @@ export default function SalesPage() {
   const [activeTab, setActiveTab] = useState('pos')
   const [selectedSale, setSelectedSale] = useState(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [stats, setStats] = useState({ totalSales: 0, totalRevenue: 0, totalDiscount: 0, totalCommission: 0 })
+  const [stats, setStats] = useState({ totalSales: 0, totalRevenue: 0, totalDiscount: 0, totalCommission: 0, totalCostPrice: 0 })
   const isAdmin = session?.user?.role === 'admin'
 
   // Date filters
@@ -110,7 +110,7 @@ export default function SalesPage() {
 
       if (data.success) {
         setPosSales(data.sales || [])
-        setStats(data.stats || { totalSales: 0, totalRevenue: 0, totalDiscount: 0, totalCommission: 0 })
+        setStats(data.stats || { totalSales: 0, totalRevenue: 0, totalDiscount: 0, totalCommission: 0, totalCostPrice: 0 })
       }
     } catch (error) {
       console.error('Error fetching POS sales:', error)
@@ -766,7 +766,7 @@ export default function SalesPage() {
           </div>
 
           {isAdmin && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4 mb-6">
               <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
                 <div className="flex items-center justify-between">
                   <div>
@@ -832,6 +832,74 @@ export default function SalesPage() {
                   </div>
                 </div>
               </div>
+
+              {(() => {
+                const profit = (stats.totalRevenue || 0) - (stats.totalCostPrice || 0)
+                const isProfit = profit >= 0
+                return (
+                  <div className={`bg-gradient-to-br ${isProfit ? 'from-teal-500 to-teal-600' : 'from-red-500 to-red-600'} rounded-lg shadow-lg p-6 text-white`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className={`${isProfit ? 'text-teal-100' : 'text-red-100'} text-sm font-medium`}>Net Profit</p>
+                        <p className="text-3xl font-bold mt-2">{formatCurrency(Math.abs(profit))}</p>
+                        <p className={`${isProfit ? 'text-teal-100' : 'text-red-100'} text-xs mt-1`}>{isProfit ? 'Revenue − Cost' : 'Loss for period'}</p>
+                      </div>
+                      <div className={`${isProfit ? 'bg-teal-400' : 'bg-red-400'} bg-opacity-30 rounded-full p-3`}>
+                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isProfit ? "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" : "M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"} />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Total Sale Returns */}
+              {(() => {
+                const totalReturns = saleReturns.reduce((sum, r) => sum + (parseFloat(r.returnAmount) || 0), 0)
+                return (
+                  <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow-lg p-6 text-white">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-orange-100 text-sm font-medium">Total Returns</p>
+                        <p className="text-3xl font-bold mt-2">{formatCurrency(totalReturns)}</p>
+                        <p className="text-orange-100 text-xs mt-1">{saleReturns.length} return(s)</p>
+                      </div>
+                      <div className="bg-orange-400 bg-opacity-30 rounded-full p-3">
+                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Total Sale Profit (after returns) */}
+              {(() => {
+                const returnProfit = saleReturns.reduce((sum, r) => {
+                  const items = Array.isArray(r.items) ? r.items : []
+                  return sum + items.reduce((s, item) => s + ((parseFloat(item.price) || 0) - (parseFloat(item.costPrice) || 0)) * (parseInt(item.quantity) || 0), 0)
+                }, 0)
+                const profitAfterReturns = (stats.totalRevenue || 0) - (stats.totalCostPrice || 0) - returnProfit
+                const isProfit = profitAfterReturns >= 0
+                return (
+                  <div className={`bg-gradient-to-br ${isProfit ? 'from-emerald-500 to-emerald-600' : 'from-rose-500 to-rose-600'} rounded-lg shadow-lg p-6 text-white`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className={`${isProfit ? 'text-emerald-100' : 'text-rose-100'} text-sm font-medium`}>Sale Profit</p>
+                        <p className="text-3xl font-bold mt-2">{formatCurrency(Math.abs(profitAfterReturns))}</p>
+                        <p className={`${isProfit ? 'text-emerald-100' : 'text-rose-100'} text-xs mt-1`}>{isProfit ? 'Net − return profits' : 'Loss after returns'}</p>
+                      </div>
+                      <div className={`${isProfit ? 'bg-emerald-400' : 'bg-rose-400'} bg-opacity-30 rounded-full p-3`}>
+                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isProfit ? "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" : "M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"} />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )}
 
@@ -1737,6 +1805,9 @@ export default function SalesPage() {
                                   {isAdmin && (
                                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Profit</th>
                                   )}
+                                  {isAdmin && (
+                                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Commission</th>
+                                  )}
                                 </tr>
                               </thead>
                               <tbody className="bg-white divide-y divide-gray-200">
@@ -1772,6 +1843,11 @@ export default function SalesPage() {
                                       {isAdmin && (
                                         <td className={`px-4 py-3 text-sm text-right font-semibold ${itemProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                           {formatCurrency(itemProfit)}
+                                        </td>
+                                      )}
+                                      {isAdmin && (
+                                        <td className="px-4 py-3 text-sm text-right font-semibold text-purple-600">
+                                          {parseFloat(item.commission || 0) > 0 ? formatCurrency(item.commission) : '-'}
                                         </td>
                                       )}
                                     </tr>
@@ -1813,6 +1889,12 @@ export default function SalesPage() {
                                   <span className="text-gray-700">Net Profit:</span>
                                   <span className={totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}>{formatCurrency(totalProfit)}</span>
                                 </div>
+                                {parseFloat(selectedSale.commission || 0) > 0 && (
+                                  <div className="flex justify-between text-sm font-semibold">
+                                    <span className="text-gray-700">Commission:</span>
+                                    <span className="text-purple-600">{formatCurrency(selectedSale.commission)}</span>
+                                  </div>
+                                )}
                               </>
                             )
                           })()}
