@@ -41,6 +41,7 @@ export default function ProductsPage() {
   const [analytics, setAnalytics] = useState(null)
   const [analyticsLoading, setAnalyticsLoading] = useState(true)
   const [deletingLowStock, setDeletingLowStock] = useState(false)
+  const [showDeleteZeroStockWarning, setShowDeleteZeroStockWarning] = useState(false)
 
   // Sync state
   const [syncing, setSyncing] = useState(false)
@@ -111,18 +112,22 @@ export default function ProductsPage() {
     finally { setAnalyticsLoading(false) }
   }
 
-  const handleDeleteLowStock = async () => {
-    if (!confirm('Are you sure you want to delete ALL low stock products? This action cannot be undone.')) return
+  const handleDeleteLowStock = () => {
+    setShowDeleteZeroStockWarning(true)
+  }
+
+  const confirmDeleteZeroStock = async () => {
+    setShowDeleteZeroStockWarning(false)
     setDeletingLowStock(true)
     try {
-      const res = await fetch('/api/products?stock=low-stock', { method: 'DELETE' })
+      const res = await fetch('/api/products?stock=zero-stock', { method: 'DELETE' })
       const data = await res.json()
       if (data.success) {
-        alert(`✅ Deleted ${data.deleted} low stock product(s).`)
+        alert(`✅ Deleted ${data.deleted} zero/negative stock product(s).`)
         fetchProducts()
         fetchAnalytics()
       } else {
-        alert('❌ ' + (data.error || 'Failed to delete low stock products'))
+        alert('❌ ' + (data.error || 'Failed to delete products'))
       }
     } catch (err) {
       alert('❌ ' + err.message)
@@ -532,10 +537,13 @@ export default function ProductsPage() {
         <div className="mt-4 flex justify-end">
           <button
             onClick={handleDeleteLowStock}
-            disabled={deletingLowStock || analyticsLoading || (analytics?.lowStockProducts ?? 0) === 0}
+            disabled={deletingLowStock || analyticsLoading || (analytics?.outOfStockProducts ?? 0) === 0}
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
           >
-            {deletingLowStock ? 'Deleting...' : `Delete All Low Stock (${analytics?.lowStockProducts ?? 0})`}
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            {deletingLowStock ? 'Deleting...' : `Delete All Low Stock (${analytics?.outOfStockProducts ?? 0})`}
           </button>
         </div>
 
@@ -1039,6 +1047,41 @@ export default function ProductsPage() {
                   Print {barcodeQuantity} Label{barcodeQuantity !== 1 ? 's' : ''}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Zero Stock Warning Modal */}
+      {showDeleteZeroStockWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowDeleteZeroStockWarning(false)} />
+          <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6 z-10">
+            <div className="flex items-center justify-center w-14 h-14 rounded-full bg-red-100 mx-auto mb-4">
+              <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 text-center mb-2">Delete All Zero Stock Products?</h3>
+            <p className="text-sm text-gray-600 text-center mb-2">
+              This will permanently delete <span className="font-semibold text-red-600">{analytics?.outOfStockProducts ?? 0} product(s)</span> where stock is <span className="font-semibold">0 or below</span>.
+            </p>
+            <p className="text-xs text-gray-500 text-center mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              ⚠️ This action <span className="font-bold">cannot be undone</span>. All associated variants will also be deleted permanently.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteZeroStockWarning(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteZeroStock}
+                className="flex-1 px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-red-600 hover:bg-red-700 transition-colors"
+              >
+                Yes, Delete All
+              </button>
             </div>
           </div>
         </div>

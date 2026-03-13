@@ -184,7 +184,9 @@ export function EnhancedPOSPage({ mode = "sale" }) {
           variantId: item.variantId,
           productName: item.title || product?.title || 'Item',
           unitRate,
-          costPrice: parseFloat(item.costPrice || product?.cost_price || variant?.compare_at_price || 0),
+          salePrice: parseFloat(variant?.price || product?.sale_price || 0),
+          originalPrice: parseFloat(product?.original_price || 0),
+          costPrice: parseFloat(item.costPrice || product?.cost_price || 0),
           quantity,
           total,
           discount,
@@ -388,11 +390,13 @@ export function EnhancedPOSPage({ mode = "sale" }) {
         variantId: variant.id,
         productName: selectedProduct.title,
         unitRate: unitRate,
-        costPrice: parseFloat(selectedProduct.cost_price || variant.compare_at_price || 0),
+        salePrice: unitRate,
+        originalPrice: parseFloat(selectedProduct.original_price || 0),
+        costPrice: parseFloat(selectedProduct.cost_price || 0),
         quantity: 1,
         total: unitRate,
         discount: 0,
-        discountType: 'rupees', // 'rupees' or 'percentage'
+        discountType: 'rupees',
         netTotal: unitRate,
         sku: variant.sku || '',
         barcode: variant.barcode || '',
@@ -497,23 +501,31 @@ export function EnhancedPOSPage({ mode = "sale" }) {
   const subtotal = billItems.reduce((sum, item) => sum + item.netTotal, 0)
   const totalItemDiscounts = billItems.reduce((sum, item) => sum + item.discount, 0)
   const globalDiscountAmount = parseFloat(globalDiscount) || 0
-  // Commission preview: mirrors the backend formula with no-commission thresholds.
-  // - costPrice < 10,000: need ≥20% markup (sale_price ≥ costPrice * 1.2), else no commission
-  // - costPrice ≥ 10,000: need ≥10% markup (sale_price ≥ costPrice * 1.1), else no commission
-  // - Then: 1% of costPrice + 10% of markup above costPrice
+  // Commission formula:
+  // effectiveOriginalPrice = originalPrice > 0 ? originalPrice : salePrice
+  // No-commission threshold:
+  //   costPrice >= 10000 → sale_rate must be >= costPrice + costPrice*1%
+  //   costPrice <  10000 → sale_rate must be >= costPrice + costPrice*2%
+  // If eligible:
+  //   sale_rate > salePrice → (effectiveOriginalPrice*1%) + ((sale_rate - effectiveOriginalPrice)*10%)
+  //   sale_rate <= salePrice → effectiveOriginalPrice*1%
+  const calcItemCommission = (saleRate, salePrice, originalPrice, costPrice, quantity) => {
+    const effOriginal = (originalPrice && originalPrice > 0) ? originalPrice : salePrice
+    if (costPrice > 0) {
+      const markupPct = costPrice >= 10000 ? 1 : 2
+      const threshold = costPrice + (costPrice / 100 * markupPct)
+      if (saleRate < threshold) return 0
+    }
+    const commissionPerUnit = saleRate > salePrice
+      ? (effOriginal / 100 * 1) + ((saleRate - effOriginal) / 100 * 10)
+      : (effOriginal / 100 * 1)
+    return Math.max(0, commissionPerUnit) * quantity
+  }
+
   const estimatedCommission = !isOrderMode && selectedEmployee
-    ? billItems.reduce((sum, item) => {
-        const price = item.unitRate
-        const costPrice = item.costPrice || 0
-        if (costPrice > 0) {
-          const threshold = costPrice < 10000 ? costPrice * 1.2 : costPrice * 1.1
-          if (price < threshold) return sum
-        }
-        const commissionPerUnit = price <= costPrice
-          ? price * 0.01
-          : (costPrice * 0.01) + ((price - costPrice) * 0.10)
-        return sum + commissionPerUnit * item.quantity
-      }, 0)
+    ? billItems.reduce((sum, item) =>
+        sum + calcItemCommission(item.unitRate, item.salePrice || item.unitRate, item.originalPrice || 0, item.costPrice || 0, item.quantity)
+      , 0)
     : 0
   const baseGrandTotal = subtotal - globalDiscountAmount
   const paidOffset = !isOrderMode && loadedOrderId ? loadedOrderPaid : 0
@@ -937,7 +949,9 @@ export function EnhancedPOSPage({ mode = "sale" }) {
           variantId: item.variantId,
           title: item.productName,
           price: item.unitRate,
-          originalPrice: item.costPrice || 0,
+          salePrice: item.salePrice || item.unitRate,
+          originalPrice: item.originalPrice || 0,
+          costPrice: item.costPrice || 0,
           quantity: item.quantity,
           discount: item.discount,
           sku: item.sku
@@ -1319,11 +1333,18 @@ export function EnhancedPOSPage({ mode = "sale" }) {
                       <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
                       <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Discount</th>
                       <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Net Total</th>
+                      {selectedEmployee && !isOrderMode && (
+                        <th className="px-3 py-3 text-right text-xs font-medium text-purple-500 uppercase">Commission</th>
+                      )}
                       <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase">Action</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {billItems.map((item) => (
+                    {billItems.map((item) => {
+                      const itemCommission = (selectedEmployee && !isOrderMode)
+                        ? calcItemCommission(item.unitRate, item.salePrice || item.unitRate, item.originalPrice || 0, item.costPrice || 0, item.quantity)
+                        : 0
+                      return (
                       <tr key={item.variantId} className="hover:bg-gray-50">
                         <td className="px-3 py-3">
                           <div>
@@ -1395,6 +1416,11 @@ export function EnhancedPOSPage({ mode = "sale" }) {
                         <td className="px-3 py-3 text-right text-sm font-bold text-indigo-600">
                           {item.netTotal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
                         </td>
+                        {selectedEmployee && !isOrderMode && (
+                          <td className="px-3 py-3 text-right text-sm font-semibold text-purple-600">
+                            {itemCommission > 0 ? itemCommission.toLocaleString('en-PK', { minimumFractionDigits: 2 }) : '-'}
+                          </td>
+                        )}
                         <td className="px-3 py-3 text-center">
                           <button
                             onClick={() => removeItem(item.variantId)}
@@ -1407,7 +1433,8 @@ export function EnhancedPOSPage({ mode = "sale" }) {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

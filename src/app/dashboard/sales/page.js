@@ -14,6 +14,7 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(true)
   const [loadingOrders, setLoadingOrders] = useState(false)
   const [convertingId, setConvertingId] = useState(null)
+  const [cancellingId, setCancellingId] = useState(null)
   const [orderSearch, setOrderSearch] = useState('')
   const [customers, setCustomers] = useState([])
   const [activeTab, setActiveTab] = useState('pos')
@@ -159,6 +160,26 @@ export default function SalesPage() {
       toast.error(error.message || 'Failed to convert order')
     } finally {
       setConvertingId(null)
+    }
+  }
+
+  const handleCancelOrder = async (orderId) => {
+    if (!window.confirm(`Cancel order #${orderId}? If the customer paid, the amount will be credited back to their ledger.`)) return
+    try {
+      setCancellingId(orderId)
+      const response = await fetch('/api/orders/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+      })
+      const data = await response.json()
+      if (!data.success) throw new Error(data.error || 'Failed to cancel order')
+      toast.success(`Order #${orderId} cancelled`)
+      await fetchOrders()
+    } catch (error) {
+      toast.error(error.message || 'Failed to cancel order')
+    } finally {
+      setCancellingId(null)
     }
   }
 
@@ -1296,10 +1317,17 @@ export default function SalesPage() {
                           </Link>
                           <button
                             onClick={() => convertOrder(order.id)}
-                            disabled={convertingId === order.id}
+                            disabled={convertingId === order.id || cancellingId === order.id}
                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60"
                           >
                             {convertingId === order.id ? 'Converting...' : 'Convert to Sale'}
+                          </button>
+                          <button
+                            onClick={() => handleCancelOrder(order.id)}
+                            disabled={cancellingId === order.id || convertingId === order.id}
+                            className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-60"
+                          >
+                            {cancellingId === order.id ? 'Cancelling...' : 'Cancel'}
                           </button>
                         </div>
                       </td>

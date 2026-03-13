@@ -198,6 +198,7 @@ export async function GET(request) {
         totalRevenue: parseFloat(stats.totalRevenue) || 0,
         totalDiscount: parseFloat(stats.totalDiscount) || 0,
         totalCommission: parseFloat(stats.totalCommission) || 0,
+        totalCostPrice: parseFloat(stats.totalCostPrice) || 0,
       }
     })
   } catch (error) {

@@ -19,6 +19,7 @@ const parseDatabaseUrl = (url) => {
 let pool = null
 let hasSaleItemDiscountColumn = null
 let hasSaleItemCostPriceColumn = null
+let hasSaleItemTotalCostPriceColumn = null
 let hasSalePaymentBreakdownColumn = null
 let hasSaleCustomerIdColumn = null
 let hasCustomerLedgerTable = null
@@ -128,6 +129,20 @@ async function ensureSaleItemCostPriceColumn(connection) {
   } catch (error) {
     if (error?.code === 'ER_DUP_FIELDNAME') { hasSaleItemCostPriceColumn = true; return }
     if (error?.code === 'ER_NO_SUCH_TABLE') { hasSaleItemCostPriceColumn = false; return }
+    throw error
+  }
+}
+
+async function ensureSaleItemTotalCostPriceColumn(connection) {
+  if (hasSaleItemTotalCostPriceColumn !== null) return
+  try {
+    const { saleitem } = await getSalesTables()
+    if (!saleitem) { hasSaleItemTotalCostPriceColumn = false; return }
+    await connection.execute(`ALTER TABLE \`${saleitem}\` ADD COLUMN \`totalCostPrice\` DECIMAL(10,2) DEFAULT 0`)
+    hasSaleItemTotalCostPriceColumn = true
+  } catch (error) {
+    if (error?.code === 'ER_DUP_FIELDNAME') { hasSaleItemTotalCostPriceColumn = true; return }
+    if (error?.code === 'ER_NO_SUCH_TABLE') { hasSaleItemTotalCostPriceColumn = false; return }
     throw error
   }
 }
@@ -448,6 +463,7 @@ export async function createSale(saleData, userId, options = {}) {
   try {
     await ensureSaleItemDiscountColumn(conn)
     await ensureSaleItemCostPriceColumn(conn)
+    await ensureSaleItemTotalCostPriceColumn(conn)
     await ensureSalePaymentBreakdownColumn(conn)
     await ensureSaleCustomerIdColumn(conn)
     await conn.beginTransaction()
@@ -458,31 +474,35 @@ export async function createSale(saleData, userId, options = {}) {
     }
 
     // Calculate total commission for the sale
+    // effectiveOriginalPrice = originalPrice if > 0, else salePrice
+    // No-commission threshold: costPrice >= 10000 → need sale_rate >= costPrice*1.01
+    //                          costPrice <  10000 → need sale_rate >= costPrice*1.02
+    // Commission: sale_rate > salePrice → effOriginal*1% + (sale_rate - effOriginal)*10%
+    //             sale_rate <= salePrice → effOriginal*1%
     let totalCommission = 0;
     const itemsWithCommission = saleData.items.map(item => {
       if (!calculateCommission) {
         return { ...item, commission: 0 };
       }
-      const price = parseFloat(item.price);
-      const costPrice = parseFloat(item.originalPrice || 0);
+      const saleRate = parseFloat(item.price);
+      const salePrice = parseFloat(item.salePrice || item.price);
+      const originalPrice = parseFloat(item.originalPrice || 0);
+      const costPrice = parseFloat(item.costPrice || 0);
+      const effOriginal = (originalPrice > 0) ? originalPrice : salePrice;
 
-      // No-commission thresholds based on cost price range:
-      // costPrice < 10,000 → need ≥20% markup; costPrice ≥ 10,000 → need ≥10% markup
       if (costPrice > 0) {
-        const threshold = costPrice < 10000 ? costPrice * 1.2 : costPrice * 1.1;
-        if (price < threshold) {
+        const markupPct = costPrice >= 10000 ? 1 : 2;
+        const threshold = costPrice + (costPrice / 100 * markupPct);
+        if (saleRate < threshold) {
           return { ...item, commission: 0 };
         }
       }
 
-      let itemCommissionPerUnit = 0;
-      if (price <= costPrice) {
-        itemCommissionPerUnit = price * 0.01;
-      } else {
-        itemCommissionPerUnit = (costPrice * 0.01) + ((price - costPrice) * 0.10);
-      }
+      const commissionPerUnit = saleRate > salePrice
+        ? (effOriginal / 100 * 1) + ((saleRate - effOriginal) / 100 * 10)
+        : (effOriginal / 100 * 1);
 
-      const itemTotalCommission = itemCommissionPerUnit * item.quantity;
+      const itemTotalCommission = Math.max(0, commissionPerUnit) * item.quantity;
       totalCommission += itemTotalCommission;
       return { ...item, commission: itemTotalCommission };
     });
@@ -555,10 +575,11 @@ export async function createSale(saleData, userId, options = {}) {
       // Some DBs may not yet have the `commission` column on SaleItem.
       // Try with commission first, then gracefully fallback without it.
       const costPrice = parseFloat(item.originalPrice || item.costPrice || 0)
+      const totalCostPrice = costPrice * parseInt(item.quantity || 1)
       const insertVariants = [
         {
-          query: `INSERT INTO ${saleitem || 'SaleItem'} (saleId, productId, variantId, title, price, costPrice, quantity, discount, commission, sku, image, createdAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          query: `INSERT INTO ${saleitem || 'SaleItem'} (saleId, productId, variantId, title, price, costPrice, totalCostPrice, quantity, discount, commission, sku, image, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           params: [
             saleId,
             String(item.productId),
@@ -566,6 +587,7 @@ export async function createSale(saleData, userId, options = {}) {
             item.title,
             item.price,
             costPrice,
+            totalCostPrice,
             item.quantity,
             parseFloat(item.discount || 0),
             item.commission,
@@ -710,6 +732,7 @@ export async function updateSaleWithItems(saleId, saleData, options = {}) {
   try {
     await ensureSaleItemDiscountColumn(conn)
     await ensureSaleItemCostPriceColumn(conn)
+    await ensureSaleItemTotalCostPriceColumn(conn)
     await ensureSalePaymentBreakdownColumn(conn)
     await ensureSaleCustomerIdColumn(conn)
     await conn.beginTransaction()
@@ -733,26 +756,25 @@ export async function updateSaleWithItems(saleId, saleData, options = {}) {
       if (!calculateCommission) {
         return { ...item, commission: 0 }
       }
-      const price = parseFloat(item.price)
-      const costPrice = parseFloat(item.originalPrice || 0)
+      const saleRate = parseFloat(item.price)
+      const salePrice = parseFloat(item.salePrice || item.price)
+      const originalPrice = parseFloat(item.originalPrice || 0)
+      const costPrice = parseFloat(item.costPrice || 0)
+      const effOriginal = (originalPrice > 0) ? originalPrice : salePrice
 
-      // No-commission thresholds based on cost price range:
-      // costPrice < 10,000 → need ≥20% markup; costPrice ≥ 10,000 → need ≥10% markup
       if (costPrice > 0) {
-        const threshold = costPrice < 10000 ? costPrice * 1.2 : costPrice * 1.1
-        if (price < threshold) {
+        const markupPct = costPrice >= 10000 ? 1 : 2
+        const threshold = costPrice + (costPrice / 100 * markupPct)
+        if (saleRate < threshold) {
           return { ...item, commission: 0 }
         }
       }
 
-      let itemCommissionPerUnit = 0
-      if (price <= costPrice) {
-        itemCommissionPerUnit = price * 0.01
-      } else {
-        itemCommissionPerUnit = (costPrice * 0.01) + ((price - costPrice) * 0.10)
-      }
+      const commissionPerUnit = saleRate > salePrice
+        ? (effOriginal / 100 * 1) + ((saleRate - effOriginal) / 100 * 10)
+        : (effOriginal / 100 * 1)
 
-      const itemTotalCommission = itemCommissionPerUnit * item.quantity
+      const itemTotalCommission = Math.max(0, commissionPerUnit) * item.quantity
       totalCommission += itemTotalCommission
       return { ...item, commission: itemTotalCommission }
     })
@@ -820,16 +842,20 @@ export async function updateSaleWithItems(saleId, saleData, options = {}) {
     }
 
     for (const item of itemsWithCommission) {
+      const costPriceU = parseFloat(item.originalPrice || item.costPrice || 0)
+      const totalCostPriceU = costPriceU * parseInt(item.quantity || 1)
       const insertVariants = [
         {
-          query: `INSERT INTO ${saleitem || 'SaleItem'} (saleId, productId, variantId, title, price, quantity, discount, commission, sku, image, createdAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          query: `INSERT INTO ${saleitem || 'SaleItem'} (saleId, productId, variantId, title, price, costPrice, totalCostPrice, quantity, discount, commission, sku, image, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           params: [
             String(saleId),
             String(item.productId),
             String(item.variantId),
             item.title,
             item.price,
+            costPriceU,
+            totalCostPriceU,
             item.quantity,
             parseFloat(item.discount || 0),
             item.commission,
@@ -1077,6 +1103,63 @@ export async function applySaleInventory(items = []) {
   }
 }
 
+export async function cancelOrder(orderId) {
+  const connection = getPool()
+  const conn = await connection.getConnection()
+  try {
+    const { sales } = await getSales({ saleId: orderId, limit: 1, offset: 0 })
+    const order = sales[0]
+    if (!order) throw new Error('Order not found')
+    if (order.status !== 'order') throw new Error('Only pending orders can be cancelled')
+
+    const customerTable = await getCustomerTable()
+    const customerId = await resolveCustomerId(conn, order.customerId, order.customerName)
+
+    if (customerId && customerTable) {
+      await ensureCustomerLedgerTable(conn)
+      await ensureCustomerLedgerDebitCreditColumns(conn)
+
+      // Reverse the due that was added to the customer's balance
+      const { paid, due } = calculatePaidAndDue(order)
+      if (due !== 0) {
+        await conn.execute(
+          `UPDATE ${customerTable} SET balance = balance - ? WHERE id = ?`,
+          [due, customerId]
+        )
+      }
+
+      // Delete all ledger entries for this order
+      await conn.execute(
+        `DELETE FROM CustomerLedger WHERE referenceId = ? AND referenceType IN ('order', 'order-payment')`,
+        [String(orderId)]
+      )
+
+      // If the customer already paid something, add a credit (refund) entry
+      if (paid > 0) {
+        await conn.execute(
+          `INSERT INTO CustomerLedger (customerId, referenceId, referenceType, total, paid, due, debit, credit) VALUES (?, ?, 'order-return', ?, ?, 0, 0, ?)`,
+          [customerId, String(orderId), paid, paid, paid]
+        )
+        // Reduce customer balance by the paid amount (credit back)
+        await conn.execute(
+          `UPDATE ${customerTable} SET balance = balance - ? WHERE id = ?`,
+          [paid, customerId]
+        )
+      }
+    }
+
+    const { sale } = await getSalesTables()
+    await conn.execute(
+      `UPDATE ${sale} SET status = 'cancelled', updatedAt = NOW() WHERE id = ?`,
+      [String(orderId)]
+    )
+
+    return { success: true }
+  } finally {
+    conn.release()
+  }
+}
+
 export async function updateSaleStatus(saleId, status) {
   const connection = getPool()
   const { sale } = await getSalesTables()
@@ -1243,10 +1326,34 @@ export async function getSales(filters = {}) {
 
     const [statsResult] = await connection.execute(statsQuery, statsParams)
 
+    // Compute totalCostPrice from SaleItem for the same filters
+    let totalCostPrice = 0
+    if (saleitem) {
+      try {
+        let costQuery = `SELECT COALESCE(SUM(si.totalCostPrice), 0) as totalCostPrice FROM ${saleitem} si JOIN ${sale} s ON si.saleId = s.id WHERE s.status = 'completed'`
+        const costParams = [...statsParams]
+        if (filters.employeeId) {
+          // already in statsParams via statsQuery
+        }
+        // Re-apply same filters
+        const costConditions = []
+        const costParamsLocal = []
+        if (filters.employeeId) { costConditions.push('s.employeeId = ?'); costParamsLocal.push(filters.employeeId) }
+        if (filters.startDate) { costConditions.push('DATE(s.createdAt) >= ?'); costParamsLocal.push(filters.startDate) }
+        if (filters.endDate) { costConditions.push('DATE(s.createdAt) <= ?'); costParamsLocal.push(filters.endDate) }
+        let costQueryFinal = `SELECT COALESCE(SUM(si.totalCostPrice), 0) as totalCostPrice FROM ${saleitem} si JOIN ${sale} s ON si.saleId = s.id WHERE s.status = 'completed'`
+        if (costConditions.length > 0) costQueryFinal += ' AND ' + costConditions.join(' AND ')
+        const [costResult] = await connection.execute(costQueryFinal, costParamsLocal)
+        totalCostPrice = parseFloat(costResult[0]?.totalCostPrice || 0)
+      } catch (e) {
+        // totalCostPrice column may not exist yet on older rows — silently use 0
+      }
+    }
+
     return {
       sales,
       total,
-      stats: statsResult[0],
+      stats: { ...statsResult[0], totalCostPrice },
     }
   } catch (error) {
     console.error('❌ Error fetching sales:', error)
