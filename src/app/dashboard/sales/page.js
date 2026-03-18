@@ -44,10 +44,15 @@ export default function SalesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const fetchReturns = async () => {
+  const fetchReturns = async (overrides = {}) => {
     try {
       setLoadingReturns(true)
-      const res = await fetch('/api/sales/returns')
+      const params = new URLSearchParams()
+      const sd = overrides.startDate !== undefined ? overrides.startDate : startDate
+      const ed = overrides.endDate !== undefined ? overrides.endDate : endDate
+      if (sd) params.append('startDate', sd)
+      if (ed) params.append('endDate', ed)
+      const res = await fetch(`/api/sales/returns?${params}`)
       const data = await res.json()
       if (data.success) setSaleReturns(data.returns || [])
     } catch (error) {
@@ -185,6 +190,7 @@ export default function SalesPage() {
 
   const handleDateFilter = () => {
     fetchPosSales()
+    fetchReturns()
   }
 
   const clearDateFilter = () => {
@@ -192,7 +198,10 @@ export default function SalesPage() {
     setEndDate('')
     setEmployeeId('')
     // Fetch all sales after clearing
-    setTimeout(() => fetchPosSales(), 100)
+    setTimeout(() => {
+      fetchPosSales()
+      fetchReturns({ startDate: '', endDate: '' })
+    }, 100)
   }
 
   const viewSaleDetails = (sale) => {
