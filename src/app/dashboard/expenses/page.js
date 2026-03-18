@@ -2,13 +2,17 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useSession } from "next-auth/react"
 import { formatPKR } from "@/lib/currency"
 import LoadingSpinner from "@/components/LoadingSpinner"
 
 export default function ExpensesPage() {
+  const { data: session } = useSession()
+  const isAdmin = session?.user?.role === 'admin'
   const [expenses, setExpenses] = useState([])
   const [expenseTitles, setExpenseTitles] = useState([])
   const [loading, setLoading] = useState(true)
+  const [deletingId, setDeletingId] = useState(null)
   const [stats, setStats] = useState({ totalExpenses: 0, totalAmount: 0 })
   const [titleBreakdown, setTitleBreakdown] = useState([])
 
@@ -63,6 +67,25 @@ export default function ExpensesPage() {
 
   const handleDateFilter = () => {
     fetchExpenses()
+  }
+
+  const handleDelete = async (expense) => {
+    if (!window.confirm(`Delete expense "${expense.exp_title}" of ${formatPKR(parseFloat(expense.exp_amount))}? This cannot be undone.`)) return
+    try {
+      setDeletingId(expense.id)
+      const res = await fetch(`/api/expenses/${expense.id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.success) {
+        setExpenses(prev => prev.filter(e => e.id !== expense.id))
+      } else {
+        alert(data.error || 'Failed to delete expense')
+      }
+    } catch (error) {
+      console.error('Error deleting expense:', error)
+      alert('Failed to delete expense')
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   const clearFilters = () => {
@@ -274,6 +297,9 @@ export default function ExpensesPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Added By
                   </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -312,6 +338,17 @@ export default function ExpensesPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div>{expense.userName || expense.userEmail}</div>
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDelete(expense)}
+                          disabled={deletingId === expense.id}
+                          className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {deletingId === expense.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -325,6 +362,7 @@ export default function ExpensesPage() {
                       {formatPKR(expenses.reduce((sum, exp) => sum + parseFloat(exp.exp_amount), 0))}
                     </div>
                   </td>
+                  <td></td>
                   <td></td>
                 </tr>
               </tfoot>

@@ -264,17 +264,15 @@ export async function getExpenses(filters = {}) {
   }
 }
 
-export async function deleteExpense(expenseId, userId) {
+export async function deleteExpense(expenseId, userId, isAdmin = false) {
   try {
     const connection = getPool()
     const { expense } = await getTableNames()
-    
-    // Delete expense (only if owned by user)
-    const [result] = await connection.execute(
-      `DELETE FROM \`${expense}\` WHERE id = ? AND added_by = ?`,
-      [expenseId, userId]
-    )
-    
+
+    const [result] = isAdmin
+      ? await connection.execute(`DELETE FROM \`${expense}\` WHERE id = ?`, [expenseId])
+      : await connection.execute(`DELETE FROM \`${expense}\` WHERE id = ? AND added_by = ?`, [expenseId, userId])
+
     return result.affectedRows > 0
   } catch (error) {
     console.error('❌ Error deleting expense:', error)
