@@ -11,7 +11,8 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const expenseId = parseInt(params.id)
+    const { id } = await params
+    const expenseId = parseInt(id)
     if (!expenseId) {
       return NextResponse.json({ success: false, error: 'Invalid expense ID' }, { status: 400 })
     }
